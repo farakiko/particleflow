@@ -20,6 +20,9 @@ def parse_args():
     # for loading the data
     parser.add_argument("--data", type=str, required=True, help="cms or delphes?")
     parser.add_argument("--dataset", type=str, default="../data/delphes/pythia8_ttbar", help="training dataset path")
+    # only used in pyg_pipeline_clic.py
+    parser.add_argument("--num_datasets",   type=int,
+                        default=1,       help="number of datasets to train together")
     parser.add_argument("--dataset_test", type=str, default="../data/delphes/pythia8_qcd", help="testing dataset path")
     parser.add_argument("--sample", type=str, default="QCD", help="sample to test on")
     parser.add_argument(
