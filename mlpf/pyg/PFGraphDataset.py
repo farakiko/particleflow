@@ -31,11 +31,17 @@ class PFGraphDataset(Dataset):
 
     @property
     def raw_file_names(self):
-        raw_list = glob(
-            osp.join(self.raw_dir, "*")
-        )  # not necessarily pkl (because clic is .json)
-        print("PFGraphDataset nfiles={}".format(len(raw_list)))
-        return sorted([raw_path.replace(self.raw_dir, ".") for raw_path in raw_list])
+        if self.data == "clic":
+            raw_list = glob(osp.join(self.raw_dir, '*.bz2'))
+            print("PFGraphDataset nfiles={}".format(len(raw_list)))
+            # print(sorted(l.replace(self.raw_dir+"/", "") for l in raw_list))
+            return sorted(l.replace(self.raw_dir+"/", "") for l in raw_list)
+        else:
+            raw_list = glob(
+                osp.join(self.raw_dir, "*")
+            )  # not necessarily pkl (because clic is .json)
+            print("PFGraphDataset nfiles={}".format(len(raw_list)))
+            return sorted([raw_path.replace(self.raw_dir, ".") for raw_path in raw_list])
 
     def _download(self):
         pass
