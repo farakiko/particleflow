@@ -24,6 +24,14 @@ Y_FEATURES = [
     "e",
 ]
 
+# target p4 for clic, in cartesian coordinates
+target_p4_clic = [
+    "charge",
+    "px",
+    "py",
+    "pz",
+    "energy"
+]
 
 def save_model(args, model_fname, outpath, model_kwargs):
 
