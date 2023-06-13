@@ -1,9 +1,11 @@
+import pickle
 import sys
 import time
 
 import numpy as np
 import onnxruntime
 import pynvml
+import yaml
 
 # pip install only onnxruntime_gpu, not onnxruntime!
 
@@ -12,6 +14,7 @@ if __name__ == "__main__":
     handle = pynvml.nvmlDeviceGetHandleByIndex(0)
 
     EP_list = ["CUDAExecutionProvider"]
+    #     EP_list = ["CPUExecutionProvider"]
 
     time.sleep(5)
 
@@ -26,19 +29,34 @@ if __name__ == "__main__":
     mem_onnx = mem.used / 1000 / 1000
     print("mem_onnx", mem_initial)
 
-    for num_elems in range(1600, 25600, 320):
+    input_dim = 17
+    # get bin size from config
+    with open(f"{sys.argv[1]}config.yaml", "r") as stream:
+        bin_size = yaml.safe_load(stream)["parameters"]["combined_graph_layer"]["bin_size"]
+
+    out = {}
+    for num_elems in [bin_size * i for i in range(50)][1:]:  # skip the first element which is 0
+        out[num_elems] = {}
         times = []
         mem_used = []
 
         # average over 100 events
         for i in range(100):
-
             # allocate array in system RAM
-            X = np.array(np.random.randn(1, num_elems, 25), np.float32)
+            X = np.array(np.random.randn(1, num_elems, input_dim), np.float32)
+            X1 = np.array(np.random.randn(1, 1, 16), np.float32)
+            X2 = np.array(np.random.randn(1, 1, 16), np.float32)
 
             # transfer data to GPU, run model, transfer data back
             t0 = time.time()
-            pred_onx = onnx_sess.run(None, {"x:0": X})
+            pred_onx = onnx_sess.run(
+                None,
+                {
+                    "x:0": X,
+                    "pf_net_dense/normalization/sub/y:0": X1,
+                    "pf_net_dense/normalization/Sqrt/x:0": X2,
+                },
+            )
             t1 = time.time()
             dt = t1 - t0
             times.append(dt)
@@ -54,3 +72,10 @@ if __name__ == "__main__":
             )
         )
         time.sleep(5)
+
+        out[num_elems]["mean"] = 1000.0 * np.mean(times)
+        out[num_elems]["std"] = 1000.0 * np.std(times)
+        out[num_elems]["mem_used"] = np.max(mem_used)
+
+        with open("out.pkl", "wb") as f:
+            pickle.dump(out, f)
