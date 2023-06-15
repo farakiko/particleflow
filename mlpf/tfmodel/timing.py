@@ -35,51 +35,52 @@ if __name__ == "__main__":
         bin_size = yaml.safe_load(stream)["parameters"]["combined_graph_layer"]["bin_size"]
 
     out = {}
+    for batch_size in [1, 2, 4, 8, 16]:
+        out[f"batch_size_{batch_size}"] = {}
+        # batch_size = int(sys.argv[2])
+        for num_elems in [bin_size * i for i in range(6)][1:]:  # skip the first element which is 0
+            # for num_elems in [100, 200, 300, 400, 500]:
+            out[f"batch_size_{batch_size}"][f"Nelem_{num_elems}"] = {}
+            times = []
+            mem_used = []
 
-    batch_size = int(sys.argv[2])
-    for num_elems in [bin_size * i for i in range(5)][1:]:  # skip the first element which is 0
-        # for num_elems in [100, 200, 300, 400, 500]:
-        out[num_elems] = {}
-        times = []
-        mem_used = []
+            # average over 100 events
+            for i in range(100):
+                # allocate array in system RAM
+                X = np.array(np.random.randn(batch_size, num_elems, input_dim), np.float32)
+                X1 = np.array(np.random.randn(1, 1, 16), np.float32)
+                X2 = np.array(np.random.randn(1, 1, 16), np.float32)
 
-        # average over 100 events
-        for i in range(100):
-            # allocate array in system RAM
-            X = np.array(np.random.randn(batch_size, num_elems, input_dim), np.float32)
-            X1 = np.array(np.random.randn(1, 1, 16), np.float32)
-            X2 = np.array(np.random.randn(1, 1, 16), np.float32)
+                # transfer data to GPU, run model, transfer data back
+                t0 = time.time()
+                pred_onx = onnx_sess.run(
+                    None,
+                    {
+                        "x:0": X,
+                        "pf_net_dense/normalization/sub/y:0": X1,
+                        "pf_net_dense/normalization/Sqrt/x:0": X2,
+                    },
+                )
+                t1 = time.time()
+                dt = t1 - t0
+                times.append(dt)
+                mem = pynvml.nvmlDeviceGetMemoryInfo(handle)
+                mem_used.append(mem.used / 1000 / 1000)
 
-            # transfer data to GPU, run model, transfer data back
-            t0 = time.time()
-            pred_onx = onnx_sess.run(
-                None,
-                {
-                    "x:0": X,
-                    "pf_net_dense/normalization/sub/y:0": X1,
-                    "pf_net_dense/normalization/Sqrt/x:0": X2,
-                },
+            print(
+                "Nelem={} mean_time={:.2f} ms stddev_time={:.2f} ms mem_used={:.0f} MB batch_size {:.0f}".format(
+                    num_elems,
+                    1000.0 * np.mean(times),
+                    1000.0 * np.std(times),
+                    np.max(mem_used),
+                    batch_size,
+                )
             )
-            t1 = time.time()
-            dt = t1 - t0
-            times.append(dt)
-            mem = pynvml.nvmlDeviceGetMemoryInfo(handle)
-            mem_used.append(mem.used / 1000 / 1000)
+            time.sleep(5)
 
-        print(
-            "Nelem={} mean_time={:.2f} ms stddev_time={:.2f} ms mem_used={:.0f} MB batch_size {:.0f}".format(
-                num_elems,
-                1000.0 * np.mean(times),
-                1000.0 * np.std(times),
-                np.max(mem_used),
-                batch_size,
-            )
-        )
-        time.sleep(5)
-
-        out[num_elems]["mean"] = 1000.0 * np.mean(times)
-        out[num_elems]["std"] = 1000.0 * np.std(times)
-        out[num_elems]["mem_used"] = np.max(mem_used)
+            out[f"batch_size_{batch_size}"][f"Nelem_{num_elems}"]["mean"] = 1000.0 * np.mean(times)
+            out[f"batch_size_{batch_size}"][f"Nelem_{num_elems}"]["std"] = 1000.0 * np.std(times)
+            out[f"batch_size_{batch_size}"][f"Nelem_{num_elems}"]["mem_used"] = np.max(mem_used)
 
         with open(f"out_bs{batch_size}.pkl", "wb") as f:
             pickle.dump(out, f)
