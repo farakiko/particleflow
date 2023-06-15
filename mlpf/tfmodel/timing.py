@@ -36,7 +36,7 @@ if __name__ == "__main__":
 
     out = {}
 
-    batch_size = sys.argv[2]
+    batch_size = int(sys.argv[2])
     # for num_elems in [bin_size * i for i in range(50)][1:]:  # skip the first element which is 0
     for num_elems in [100, 200, 300, 400, 500]:
         out[num_elems] = {}
