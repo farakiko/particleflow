@@ -47,8 +47,8 @@ if __name__ == "__main__":
         for i in range(100):
             # allocate array in system RAM
             X = np.array(np.random.randn(batch_size, num_elems, input_dim), np.float32)
-            X1 = np.array(np.random.randn(batch_size, batch_size, 16), np.float32)
-            X2 = np.array(np.random.randn(batch_size, batch_size, 16), np.float32)
+            X1 = np.array(np.random.randn(1, 1, 16), np.float32)
+            X2 = np.array(np.random.randn(1, 1, 16), np.float32)
 
             # transfer data to GPU, run model, transfer data back
             t0 = time.time()
