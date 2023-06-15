@@ -82,5 +82,5 @@ if __name__ == "__main__":
             out[f"batch_size_{batch_size}"][f"Nelem_{num_elems}"]["std"] = 1000.0 * np.std(times)
             out[f"batch_size_{batch_size}"][f"Nelem_{num_elems}"]["mem_used"] = np.max(mem_used)
 
-        with open(f"out_bs{batch_size}.pkl", "wb") as f:
+        with open("out.pkl", "wb") as f:
             pickle.dump(out, f)
