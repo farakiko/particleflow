@@ -22,7 +22,7 @@ if __name__ == "__main__":
     mem_initial = mem.used / 1000 / 1000
     print("mem_initial", mem_initial)
 
-    onnx_sess = onnxruntime.InferenceSession(sys.argv[1], providers=EP_list)
+    onnx_sess = onnxruntime.InferenceSession(f"{sys.argv[1]}/model.onnx", providers=EP_list)
     time.sleep(5)
 
     mem = pynvml.nvmlDeviceGetMemoryInfo(handle)
@@ -31,11 +31,14 @@ if __name__ == "__main__":
 
     input_dim = 17
     # get bin size from config
-    with open(f"{sys.argv[1]}config.yaml", "r") as stream:
+    with open(f"{sys.argv[1]}/config.yaml", "r") as stream:
         bin_size = yaml.safe_load(stream)["parameters"]["combined_graph_layer"]["bin_size"]
 
     out = {}
-    for num_elems in [bin_size * i for i in range(50)][1:]:  # skip the first element which is 0
+
+    batch_size = sys.argv[2]
+    # for num_elems in [bin_size * i for i in range(50)][1:]:  # skip the first element which is 0
+    for num_elems in [100, 200, 300, 400, 500]:
         out[num_elems] = {}
         times = []
         mem_used = []
@@ -43,9 +46,9 @@ if __name__ == "__main__":
         # average over 100 events
         for i in range(100):
             # allocate array in system RAM
-            X = np.array(np.random.randn(1, num_elems, input_dim), np.float32)
-            X1 = np.array(np.random.randn(1, 1, 16), np.float32)
-            X2 = np.array(np.random.randn(1, 1, 16), np.float32)
+            X = np.array(np.random.randn(batch_size, num_elems, input_dim), np.float32)
+            X1 = np.array(np.random.randn(batch_size, 1, 16), np.float32)
+            X2 = np.array(np.random.randn(batch_size, 1, 16), np.float32)
 
             # transfer data to GPU, run model, transfer data back
             t0 = time.time()
@@ -77,5 +80,5 @@ if __name__ == "__main__":
         out[num_elems]["std"] = 1000.0 * np.std(times)
         out[num_elems]["mem_used"] = np.max(mem_used)
 
-        with open("out.pkl", "wb") as f:
+        with open(f"out_bs{batch_size}.pkl", "wb") as f:
             pickle.dump(out, f)
