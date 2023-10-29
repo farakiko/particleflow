@@ -5,19 +5,20 @@ Author: Farouk Mokhtar
 """
 
 import argparse
-from datetime import datetime
-from functools import partial
 import logging
 import os
 import os.path as osp
 import pickle as pkl
-from pathlib import Path
 import shutil
-import yaml
+from datetime import datetime
+from functools import partial
+from pathlib import Path
+
 import fastjet
 import torch
 import torch.distributed as dist
 import torch.multiprocessing as mp
+import yaml
 from pyg.inference import make_plots, run_predictions
 from pyg.logger import _configLogger, _logger
 from pyg.mlpf import MLPF
@@ -25,7 +26,6 @@ from pyg.PFDataset import InterleavedIterator, PFDataset
 from pyg.training import train_mlpf
 from pyg.utils import CLASS_LABELS, X_FEATURES, save_HPs
 from utils import create_experiment_dir
-
 
 logging.basicConfig(level=logging.INFO)
 
@@ -81,7 +81,7 @@ def run(rank, world_size, config, args, outdir, logfile):
             model_kwargs = pkl.load(f)
 
         model = MLPF(**model_kwargs)
-        optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr)
+        optimizer = torch.optim.AdamW(model.parameters(), lr=config["lr"])
 
         checkpoint = torch.load(f"{outdir}/best_weights.pth", map_location=torch.device(rank))
 
@@ -163,7 +163,6 @@ def run(rank, world_size, config, args, outdir, logfile):
         )
 
     if args.test:
-
         if config["load"] is None:
             # if we don't load, we must have a newly trained model
             assert args.train, "Please train a model before testing, or load a model with --load"
@@ -251,7 +250,6 @@ def override_config(config, args):
 
 
 def device_agnostic_run(config, args, world_size, outdir):
-
     if args.train:  # create a new outdir when training a model to never overwrite
         logfile = f"{outdir}/train.log"
         _configLogger("mlpf", filename=logfile)
@@ -304,8 +302,8 @@ def main():
 
     if args.hpo:
         import ray
-        from ray import tune
         from ray import train as ray_train
+        from ray import tune
 
         # from ray.tune.logger import TBXLoggerCallback
         from raytune.pt_search_space import raytune_num_samples, search_space, set_hps_from_search_space
