@@ -53,6 +53,10 @@ def run_predictions(world_size, rank, model, loader, sample, outpath, jetdef, je
         ycand = unpack_target(batch.ycand)
         ypred = unpack_predictions(ypred)
 
+        for k, v in ygen.items():
+            ygen[k] = v.detach().cpu()
+        for k, v in ycand.items():
+            ycand[k] = v.detach().cpu()
         for k, v in ypred.items():
             ypred[k] = v.detach().cpu()
 
