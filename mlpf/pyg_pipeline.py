@@ -106,7 +106,8 @@ def run(rank, world_size, config, args, outdir, logfile):
         model, optimizer = load_checkpoint(checkpoint, model, optimizer)
 
         if args.load_checkpoint:
-            testdir_name = f"_{args.load_checkpoint[:13]}"
+            testdir_name = f"_{args.load_checkpoint[-4]}"   # skip the .pth
+
         else:
             testdir_name = "_bestweights"
 
