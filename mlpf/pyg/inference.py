@@ -7,6 +7,7 @@ import fastjet
 import mplhep
 import numpy as np
 import torch
+import torch_geometric
 import tqdm
 import vector
 from jet_utils import build_dummy_array, match_two_jet_collections
@@ -21,7 +22,6 @@ from plotting.plot_utils import (
     plot_particles,
     plot_sum_energy,
 )
-import torch_geometric
 from torch_geometric.data import Batch
 
 from .logger import _logger
@@ -55,7 +55,7 @@ def predict_one_batch(conv_type, model, i, batch, rank, jetdef, jet_ptcut, jet_m
     jets_coll = {}
 
     cs = np.unique(batch_ids, return_counts=True)[1]
-    Xs = awkward.unflatten(awkward.from_numpy(batch.X.numpy()), cs)
+    Xs = awkward.unflatten(awkward.from_numpy(batch.X.cpu().numpy()), cs)
 
     for typ, ydata in zip(["gen", "cand"], [ygen, ycand]):
         clsid = awkward.unflatten(ydata["cls_id"], cs)
