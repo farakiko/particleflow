@@ -42,8 +42,6 @@ from utils import create_comet_experiment
 from comet_ml import OfflineExperiment, Experiment  # noqa: F401, isort:skip
 
 
-
-
 # Ignore divide by 0 errors
 np.seterr(divide="ignore", invalid="ignore")
 
@@ -792,7 +790,7 @@ def device_agnostic_run(config, args, world_size, outdir):
         logfile = f"{outdir}/train.log"
         _configLogger("mlpf", filename=logfile)
     else:
-        outdir = str(Path(args.load).parent)
+        # outdir = str(Path(args.load).parent.parent)
         logfile = f"{outdir}/test.log"
         _configLogger("mlpf", filename=logfile)
 
