@@ -104,14 +104,14 @@ def mlpf_loss(y, ypred, met_finetuning=False):
         loss["MET"] = torch.nn.functional.huber_loss(pred_met, true_met).detach().mean()
         loss["Sliced_Wasserstein_Loss"] = sliced_wasserstein_loss(y["momentum"], ypred["momentum"]).detach().mean()
 
+    px = ypred["momentum"][..., 0:1] * ypred["momentum"][..., 3:4] * msk_true_particle
+    py = ypred["momentum"][..., 0:1] * ypred["momentum"][..., 2:3] * msk_true_particle
+
+    pred_met = torch.sqrt(torch.sum(px, axis=-2) ** 2 + torch.sum(py, axis=-2) ** 2) * ypred["probX"]
+    true_met = torch.sqrt(torch.sum(px, axis=-2) ** 2 + torch.sum(py, axis=-2) ** 2)
+    loss["MET"] = torch.nn.functional.huber_loss(pred_met, true_met).detach().mean()
+
     if met_finetuning:
-        px = ypred["momentum"][..., 0:1] * ypred["momentum"][..., 3:4] * msk_true_particle
-        py = ypred["momentum"][..., 0:1] * ypred["momentum"][..., 2:3] * msk_true_particle
-
-        pred_met = torch.sqrt(torch.sum(px, axis=-2) ** 2 + torch.sum(py, axis=-2) ** 2) * ypred["probX"]
-        true_met = torch.sqrt(torch.sum(px, axis=-2) ** 2 + torch.sum(py, axis=-2) ** 2)
-        loss["MET"] = torch.nn.functional.huber_loss(pred_met, true_met).detach().mean()
-
         loss["Total"] = loss["Classification"] + loss["Regression"] + loss["Charge"] + loss["MET"]
     else:
         loss["Total"] = loss["Classification"] + loss["Regression"] + loss["Charge"]
@@ -125,8 +125,8 @@ def mlpf_loss(y, ypred, met_finetuning=False):
     loss["Regression"] = loss["Regression"].detach()
     loss["Charge"] = loss["Charge"].detach()
 
-    if met_finetuning:
-        loss["MET"] = loss["MET"].detach()
+    # if met_finetuning:
+    loss["MET"] = loss["MET"].detach()
 
     return loss
 
