@@ -109,10 +109,14 @@ def mlpf_loss(y, ypred, met_finetuning=False, batchidx_or_mask=False):
 
     px = ypred["momentum"][..., 0:1] * ypred["momentum"][..., 3:4] * msk_true_particle
     py = ypred["momentum"][..., 0:1] * ypred["momentum"][..., 2:3] * msk_true_particle
-    pred_met = torch.sqrt(
-        global_add_pool(px * ypred["probX"], batchidx_or_mask) ** 2
-        + global_add_pool(py * ypred["probX"], batchidx_or_mask) ** 2
-    )
+
+    if met_finetuning:
+        pred_met = torch.sqrt(
+            global_add_pool(px * ypred["probX"], batchidx_or_mask) ** 2
+            + global_add_pool(py * ypred["probX"], batchidx_or_mask) ** 2
+        )
+    else:
+        pred_met = torch.sqrt(global_add_pool(px, batchidx_or_mask) ** 2 + global_add_pool(py, batchidx_or_mask) ** 2)
 
     px = y["momentum"][..., 0:1] * y["momentum"][..., 3:4] * msk_true_particle
     py = y["momentum"][..., 0:1] * y["momentum"][..., 2:3] * msk_true_particle
