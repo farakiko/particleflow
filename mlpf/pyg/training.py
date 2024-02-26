@@ -62,7 +62,7 @@ def sliced_wasserstein_loss(y_true, y_pred, num_projections=200):
     return ret
 
 
-def mlpf_loss(y, ypred):
+def mlpf_loss(y, ypred, met_finetuning=False):
     """
     Args
         y [dict]: relevant keys are "cls_id, momentum, charge"
@@ -104,7 +104,14 @@ def mlpf_loss(y, ypred):
         loss["MET"] = torch.nn.functional.huber_loss(pred_met, true_met).detach().mean()
         loss["Sliced_Wasserstein_Loss"] = sliced_wasserstein_loss(y["momentum"], ypred["momentum"]).detach().mean()
 
-    loss["Total"] = loss["Classification"] + loss["Regression"] + loss["Charge"]
+    if met_finetuning:
+        pred_met = torch.sqrt(torch.sum(px, axis=-2) ** 2 + torch.sum(py, axis=-2) ** 2) * ypred["probX"]
+        true_met = torch.sqrt(torch.sum(px, axis=-2) ** 2 + torch.sum(py, axis=-2) ** 2)
+        loss["MET"] = torch.nn.functional.huber_loss(pred_met, true_met).detach().mean()
+
+        loss["Total"] = loss["Classification"] + loss["Regression"] + loss["Charge"] + loss["MET"]
+    else:
+        loss["Total"] = loss["Classification"] + loss["Regression"] + loss["Charge"]
 
     # Keep track of loss components for each true particle type
     for icls in range(0, 7):
@@ -114,6 +121,9 @@ def mlpf_loss(y, ypred):
     loss["Classification"] = loss["Classification"].detach()
     loss["Regression"] = loss["Regression"].detach()
     loss["Charge"] = loss["Charge"].detach()
+
+    if met_finetuning:
+        loss["MET"] = loss["MET"].detach()
 
     return loss
 
@@ -206,6 +216,7 @@ def train_and_valid(
     comet_step_freq=None,
     epoch=None,
     dtype=torch.float32,
+    met_finetuning=False,
 ):
     """
     Performs training over a given epoch. Will run a validation step every N_STEPS and after the last training batch.
@@ -251,16 +262,16 @@ def train_and_valid(
                 with torch.no_grad():
                     ypred = model(batch.X, batchidx_or_mask)
 
-        ypred = unpack_predictions(ypred)
+        ypred = unpack_predictions(ypred, met_finetuning)
 
         with torch.autocast(device_type=device_type, dtype=dtype, enabled=device_type == "cuda"):
             if is_train:
-                loss = mlpf_loss(ygen, ypred)
+                loss = mlpf_loss(ygen, ypred, met_finetuning)
                 for param in model.parameters():
                     param.grad = None
             else:
                 with torch.no_grad():
-                    loss = mlpf_loss(ygen, ypred)
+                    loss = mlpf_loss(ygen, ypred, met_finetuning)
 
         if is_train:
             loss["Total"].backward()
@@ -314,6 +325,7 @@ def train_mlpf(
     checkpoint_freq=None,
     comet_experiment=None,
     comet_step_freq=None,
+    met_finetuning=False,
 ):
     """
     Will run a full training by calling train().
@@ -325,6 +337,8 @@ def train_mlpf(
         valid_loader: a pytorch geometric Dataloader that loads the validation data in the form ~ DataBatch(X, ygen, ycands)
         patience: number of stale epochs before stopping the training
         outdir: path to store the model weights and training plots
+        met_finetuning: Boolean which if True would regress probX per MLPF candidate and compare to GenMET
+                        through Huber-like loss (or MSE, or perhaps a multi-bin loss)
     """
 
     if (rank == 0) or (rank == "cpu"):
@@ -355,7 +369,15 @@ def train_mlpf(
             ) as prof:
                 with record_function("model_train"):
                     losses_t = train_and_valid(
-                        rank, world_size, model, optimizer, train_loader, is_train=True, lr_schedule=lr_schedule, dtype=dtype
+                        rank,
+                        world_size,
+                        model,
+                        optimizer,
+                        train_loader,
+                        is_train=True,
+                        lr_schedule=lr_schedule,
+                        dtype=dtype,
+                        met_finetuning=met_finetuning,
                     )
             prof.export_chrome_trace("trace.json")
         else:
@@ -371,6 +393,7 @@ def train_mlpf(
                 comet_step_freq=comet_step_freq,
                 epoch=epoch,
                 dtype=dtype,
+                met_finetuning=met_finetuning,
             )
 
         losses_v = train_and_valid(
@@ -661,6 +684,7 @@ def run(rank, world_size, config, args, outdir, logfile):
             checkpoint_freq=config["checkpoint_freq"],
             comet_experiment=comet_experiment,
             comet_step_freq=config["comet_step_freq"],
+            met_finetuning=args.met_finetuning,
         )
 
         checkpoint = torch.load(f"{outdir}/best_weights.pth", map_location=torch.device(rank))
@@ -924,6 +948,7 @@ def train_ray_trial(config, args, outdir=None):
         checkpoint_freq=config["checkpoint_freq"],
         comet_experiment=comet_experiment,
         comet_step_freq=config["comet_step_freq"],
+        met_finetuning=args.met_finetuning,
     )
 
 

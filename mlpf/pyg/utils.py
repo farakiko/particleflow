@@ -4,8 +4,7 @@ import pickle as pkl
 import pandas as pd
 import torch
 import torch.utils.data
-from torch.optim.lr_scheduler import OneCycleLR, CosineAnnealingLR, ConstantLR
-
+from torch.optim.lr_scheduler import ConstantLR, CosineAnnealingLR, OneCycleLR
 
 # https://github.com/ahlinist/cmssw/blob/1df62491f48ef964d198f574cdfcccfd17c70425/DataFormats/ParticleFlowReco/interface/PFBlockElement.h#L33
 # https://github.com/cms-sw/cmssw/blob/master/DataFormats/ParticleFlowCandidate/src/PFCandidate.cc#L254
@@ -176,9 +175,13 @@ def unpack_target(y):
     return ret
 
 
-def unpack_predictions(preds):
+def unpack_predictions(preds, met_finetuning=False):
     ret = {}
-    ret["cls_id_onehot"], ret["momentum"], ret["charge"] = preds
+
+    if met_finetuning:
+        ret["cls_id_onehot"], ret["momentum"], ret["charge"], ret["probX"] = preds
+    else:
+        ret["cls_id_onehot"], ret["momentum"], ret["charge"] = preds
 
     # ret["charge"] = torch.argmax(ret["charge"], axis=1, keepdim=True) - 1
 

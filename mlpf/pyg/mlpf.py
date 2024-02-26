@@ -1,11 +1,10 @@
 import torch
 import torch.nn as nn
+from pyg.logger import _logger
+from torch.backends.cuda import sdp_kernel
 from torch_geometric.nn.conv import GravNetConv
 
 from .gnn_lsh import CombinedGraphLayer
-
-from torch.backends.cuda import sdp_kernel
-from pyg.logger import _logger
 
 
 class GravNetLayer(nn.Module):
@@ -150,6 +149,7 @@ class MLPF(nn.Module):
         sin_phi_mode="linear",
         cos_phi_mode="linear",
         energy_mode="linear",
+        met_finetuning=False,
     ):
         super(MLPF, self).__init__()
 
@@ -169,6 +169,8 @@ class MLPF(nn.Module):
         self.num_convs = num_convs
 
         self.bin_size = bin_size
+
+        self.met_finetuning = met_finetuning
 
         # embedding of the inputs
         if num_convs != 0:
@@ -228,6 +230,9 @@ class MLPF(nn.Module):
         # elementwise DNN for node charge regression, classes (-1, 0, 1)
         self.nn_charge = ffn(decoding_dim + num_classes, 3, width, self.act, dropout)
 
+        if self.met_finetuning:
+            self.nn_probX = ffn(decoding_dim + num_classes, 1, width, self.act, dropout)
+
     # @torch.compile
     def forward(self, X_features, batch_or_mask):
         embeddings_id, embeddings_reg = [], []
@@ -275,4 +280,8 @@ class MLPF(nn.Module):
 
         pred_charge = self.nn_charge(embedding_reg)
 
-        return preds_id, preds_momentum, pred_charge
+        if self.met_finetuning:
+            probX = self.nn_probX(embedding_reg)
+            return preds_id, preds_momentum, pred_charge, probX
+        else:
+            return preds_id, preds_momentum, pred_charge
