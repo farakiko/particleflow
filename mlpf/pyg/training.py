@@ -105,6 +105,9 @@ def mlpf_loss(y, ypred, met_finetuning=False):
         loss["Sliced_Wasserstein_Loss"] = sliced_wasserstein_loss(y["momentum"], ypred["momentum"]).detach().mean()
 
     if met_finetuning:
+        px = ypred["momentum"][..., 0:1] * ypred["momentum"][..., 3:4] * msk_true_particle
+        py = ypred["momentum"][..., 0:1] * ypred["momentum"][..., 2:3] * msk_true_particle
+
         pred_met = torch.sqrt(torch.sum(px, axis=-2) ** 2 + torch.sum(py, axis=-2) ** 2) * ypred["probX"]
         true_met = torch.sqrt(torch.sum(px, axis=-2) ** 2 + torch.sum(py, axis=-2) ** 2)
         loss["MET"] = torch.nn.functional.huber_loss(pred_met, true_met).detach().mean()
