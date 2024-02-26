@@ -62,7 +62,7 @@ def sliced_wasserstein_loss(y_true, y_pred, num_projections=200):
     return ret
 
 
-def mlpf_loss(y, ypred, met_finetuning=False):
+def mlpf_loss(y, ypred, met_finetuning=False, batchidx_or_mask=False):
     """
     Args
         y [dict]: relevant keys are "cls_id, momentum, charge"
@@ -104,11 +104,20 @@ def mlpf_loss(y, ypred, met_finetuning=False):
         loss["MET"] = torch.nn.functional.huber_loss(pred_met, true_met).detach().mean()
         loss["Sliced_Wasserstein_Loss"] = sliced_wasserstein_loss(y["momentum"], ypred["momentum"]).detach().mean()
 
+    # add MET finetuning stuff
+    from torch_geometric.nn import global_add_pool
+
     px = ypred["momentum"][..., 0:1] * ypred["momentum"][..., 3:4] * msk_true_particle
     py = ypred["momentum"][..., 0:1] * ypred["momentum"][..., 2:3] * msk_true_particle
+    pred_met = torch.sqrt(
+        global_add_pool(px * ypred["probX"], batchidx_or_mask) ** 2
+        + global_add_pool(py * ypred["probX"], batchidx_or_mask) ** 2
+    )
 
-    pred_met = torch.sqrt(torch.sum(px, axis=-2) ** 2 + torch.sum(py, axis=-2) ** 2) * ypred["probX"]
-    true_met = torch.sqrt(torch.sum(px, axis=-2) ** 2 + torch.sum(py, axis=-2) ** 2)
+    px = y["momentum"][..., 0:1] * y["momentum"][..., 3:4] * msk_true_particle
+    py = y["momentum"][..., 0:1] * y["momentum"][..., 2:3] * msk_true_particle
+    true_met = torch.sqrt(global_add_pool(px, batchidx_or_mask) ** 2 + global_add_pool(py, batchidx_or_mask) ** 2)
+
     loss["MET"] = torch.nn.functional.huber_loss(pred_met, true_met).detach().mean()
 
     if met_finetuning:
@@ -269,12 +278,12 @@ def train_and_valid(
 
         with torch.autocast(device_type=device_type, dtype=dtype, enabled=device_type == "cuda"):
             if is_train:
-                loss = mlpf_loss(ygen, ypred, met_finetuning)
+                loss = mlpf_loss(ygen, ypred, met_finetuning, batchidx_or_mask)
                 for param in model.parameters():
                     param.grad = None
             else:
                 with torch.no_grad():
-                    loss = mlpf_loss(ygen, ypred, met_finetuning)
+                    loss = mlpf_loss(ygen, ypred, met_finetuning, batchidx_or_mask)
 
         if is_train:
             loss["Total"].backward()
