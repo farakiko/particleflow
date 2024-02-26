@@ -86,7 +86,7 @@ parser.add_argument(
     help="attention type for self-attention layer",
     choices=["math", "efficient", "flash"],
 )
-parser.add_argument("--met_finetuning", action="store_true", default=None, help="will regress a probX per candidate")
+parser.add_argument("--met-finetuning", action="store_true", default=None, help="will regress a probX per candidate")
 
 
 def main():

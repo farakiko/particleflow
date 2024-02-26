@@ -606,6 +606,7 @@ def run(rank, world_size, config, args, outdir, logfile):
             "energy_mode": config["model"]["energy_mode"],
             "attention_type": config["model"]["attention"]["attention_type"],
             **config["model"][config["conv_type"]],
+            "met_finetuning": args.met_finetuning,
         }
         model = MLPF(**model_kwargs)
         optimizer = torch.optim.AdamW(model.parameters(), lr=config["lr"])
