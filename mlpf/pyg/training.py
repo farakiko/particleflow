@@ -411,6 +411,7 @@ def train_mlpf(
             comet_step_freq=comet_step_freq,
             epoch=epoch,
             dtype=dtype,
+            met_finetuning=met_finetuning,
         )
 
         if comet_experiment:
