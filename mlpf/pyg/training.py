@@ -92,6 +92,8 @@ def mlpf_loss(y, ypred, met_finetuning=False, batchidx_or_mask=False):
     loss["Regression"] = loss_regression.sum() / npart
     loss["Charge"] = loss_charge.sum() / npart
 
+    loss["Total"] = loss["Classification"] + loss["Regression"] + loss["Charge"]
+
     # in case we are using the 3D-padded mode, we can compute a few additional event-level monitoring losses
     if len(msk_true_particle.shape) == 3:
         px = ypred["momentum"][..., 0:1] * ypred["momentum"][..., 3:4] * msk_true_particle
@@ -123,7 +125,7 @@ def mlpf_loss(y, ypred, met_finetuning=False, batchidx_or_mask=False):
     loss["MET"] = torch.nn.functional.huber_loss(pred_met, true_met)
 
     if met_finetuning:
-        loss["Total"] += loss["Classification"] + loss["Regression"] + loss["Charge"] + loss["MET"]
+        loss["Total"] += loss["MET"]
 
     # Keep track of loss components for each true particle type
     for icls in range(0, 7):
