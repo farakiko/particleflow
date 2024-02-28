@@ -111,23 +111,19 @@ def mlpf_loss(y, ypred, met_finetuning=False, batchidx_or_mask=False):
     py = ypred["momentum"][..., 0:1] * ypred["momentum"][..., 2:3] * msk_true_particle
 
     if met_finetuning:
-        pred_met = torch.sqrt(
-            global_add_pool(px * ypred["probX"], batchidx_or_mask) ** 2
-            + global_add_pool(py * ypred["probX"], batchidx_or_mask) ** 2
-        )
-    else:
-        pred_met = torch.sqrt(global_add_pool(px, batchidx_or_mask) ** 2 + global_add_pool(py, batchidx_or_mask) ** 2)
+        px *= ypred["probX"]
+        py *= ypred["probX"]
+
+    pred_met = torch.sqrt(global_add_pool(px, batchidx_or_mask) ** 2 + global_add_pool(py, batchidx_or_mask) ** 2)
 
     px = y["momentum"][..., 0:1] * y["momentum"][..., 3:4] * msk_true_particle
     py = y["momentum"][..., 0:1] * y["momentum"][..., 2:3] * msk_true_particle
     true_met = torch.sqrt(global_add_pool(px, batchidx_or_mask) ** 2 + global_add_pool(py, batchidx_or_mask) ** 2)
 
-    loss["MET"] = torch.nn.functional.huber_loss(pred_met, true_met).detach().mean()
+    loss["MET"] = torch.nn.functional.huber_loss(pred_met, true_met)
 
     if met_finetuning:
-        loss["Total"] = loss["Classification"] + loss["Regression"] + loss["Charge"] + loss["MET"]
-    else:
-        loss["Total"] = loss["Classification"] + loss["Regression"] + loss["Charge"]
+        loss["Total"] += loss["Classification"] + loss["Regression"] + loss["Charge"] + loss["MET"]
 
     # Keep track of loss components for each true particle type
     for icls in range(0, 7):
