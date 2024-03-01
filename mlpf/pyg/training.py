@@ -109,8 +109,8 @@ def mlpf_loss(y, ypred, met_finetuning=False, batchidx_or_mask=False):
     # add MET finetuning stuff
     from torch_geometric.nn import global_add_pool
 
-    px = ypred["momentum"][..., 0:1] * ypred["momentum"][..., 3:4] * msk_true_particle
-    py = ypred["momentum"][..., 0:1] * ypred["momentum"][..., 2:3] * msk_true_particle
+    px = ypred["momentum"][..., 0:1].detach() * ypred["momentum"][..., 3:4].detach() * msk_true_particle
+    py = ypred["momentum"][..., 0:1].detach() * ypred["momentum"][..., 2:3].detach() * msk_true_particle
 
     if met_finetuning:
         px *= ypred["probX"]
@@ -118,8 +118,8 @@ def mlpf_loss(y, ypred, met_finetuning=False, batchidx_or_mask=False):
 
     pred_met = torch.sqrt(global_add_pool(px, batchidx_or_mask) ** 2 + global_add_pool(py, batchidx_or_mask) ** 2)
 
-    px = y["momentum"][..., 0:1] * y["momentum"][..., 3:4] * msk_true_particle
-    py = y["momentum"][..., 0:1] * y["momentum"][..., 2:3] * msk_true_particle
+    px = y["momentum"][..., 0:1].detach() * y["momentum"][..., 3:4].detach() * msk_true_particle
+    py = y["momentum"][..., 0:1].detach() * y["momentum"][..., 2:3].detach() * msk_true_particle
     true_met = torch.sqrt(global_add_pool(px, batchidx_or_mask) ** 2 + global_add_pool(py, batchidx_or_mask) ** 2)
 
     loss["MET"] = torch.nn.functional.huber_loss(pred_met, true_met)
