@@ -154,8 +154,6 @@ valid_dataset:
           version: 1.6.0
         cms_pf_sms_t1tttt:
           version: 1.6.0
-        cms_pf_vbf:
-          version: 1.6.0
     gun:
       batch_size: 20
       samples:
