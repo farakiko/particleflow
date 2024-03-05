@@ -269,23 +269,21 @@ def train_and_valid(
 
         batchidx_or_mask = batch.batch if conv_type == "gravnet" else batch.mask
 
-        with torch.autocast(device_type=device_type, dtype=dtype, enabled=device_type == "cuda"):
-            if is_train:
+        if is_train:
+            ypred = model(batch.X, batchidx_or_mask)
+        else:
+            with torch.no_grad():
                 ypred = model(batch.X, batchidx_or_mask)
-            else:
-                with torch.no_grad():
-                    ypred = model(batch.X, batchidx_or_mask)
 
         ypred = unpack_predictions(ypred, met_finetuning)
 
-        with torch.autocast(device_type=device_type, dtype=dtype, enabled=device_type == "cuda"):
-            if is_train:
+        if is_train:
+            loss = mlpf_loss(ygen, ypred, met_finetuning, batchidx_or_mask)
+            for param in model.parameters():
+                param.grad = None
+        else:
+            with torch.no_grad():
                 loss = mlpf_loss(ygen, ypred, met_finetuning, batchidx_or_mask)
-                for param in model.parameters():
-                    param.grad = None
-            else:
-                with torch.no_grad():
-                    loss = mlpf_loss(ygen, ypred, met_finetuning, batchidx_or_mask)
 
         if is_train:
             loss["Total"].backward()
@@ -757,20 +755,18 @@ def run(rank, world_size, config, args, outdir, logfile):
                 else:
                     jetdef = fastjet.JetDefinition(fastjet.antikt_algorithm, 0.4)
 
-                device_type = "cuda" if isinstance(rank, int) else "cpu"
-                with torch.autocast(device_type=device_type, dtype=dtype, enabled=device_type == "cuda"):
-                    run_predictions(
-                        world_size,
-                        rank,
-                        model,
-                        test_loader,
-                        sample,
-                        outdir,
-                        jetdef,
-                        jet_ptcut=15.0,
-                        jet_match_dr=0.1,
-                        dir_name=testdir_name,
-                    )
+                run_predictions(
+                    world_size,
+                    rank,
+                    model,
+                    test_loader,
+                    sample,
+                    outdir,
+                    jetdef,
+                    jet_ptcut=15.0,
+                    jet_match_dr=0.1,
+                    dir_name=testdir_name,
+                )
 
     if (rank == 0) or (rank == "cpu"):  # make plots and export to onnx only on a single machine
         if args.make_plots:
