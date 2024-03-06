@@ -65,7 +65,7 @@ model:
     activation: "elu"
     # attention specific paramters
     num_heads: 16
-    attention_type: flash
+    attention_type: efficient
 
   mamba:
     conv_type: mamba
