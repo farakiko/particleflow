@@ -95,34 +95,33 @@ def mlpf_loss(y, ypred, met_finetuning=False, batchidx_or_mask=False):
     loss["Total"] = loss["Classification"] + loss["Regression"] + loss["Charge"]
 
     # in case we are using the 3D-padded mode, we can compute a few additional event-level monitoring losses
+    px = ypred["momentum"][..., 0:1].detach() * ypred["momentum"][..., 3:4].detach() * msk_true_particle
+    py = ypred["momentum"][..., 0:1].detach() * ypred["momentum"][..., 2:3].detach() * msk_true_particle
+    if met_finetuning:
+        px *= ypred["probX"]
+        py *= ypred["probX"]
+
     if len(msk_true_particle.shape) == 3:
-        px = ypred["momentum"][..., 0:1] * ypred["momentum"][..., 3:4] * msk_true_particle
-        py = ypred["momentum"][..., 0:1] * ypred["momentum"][..., 2:3] * msk_true_particle
         pred_met = torch.sqrt(torch.sum(px, axis=-2) ** 2 + torch.sum(py, axis=-2) ** 2)
 
         px = y["momentum"][..., 0:1] * y["momentum"][..., 3:4] * msk_true_particle
         py = y["momentum"][..., 0:1] * y["momentum"][..., 2:3] * msk_true_particle
         true_met = torch.sqrt(torch.sum(px, axis=-2) ** 2 + torch.sum(py, axis=-2) ** 2)
-        loss["MET"] = torch.nn.functional.huber_loss(pred_met, true_met).detach().mean()
+
+        loss["MET"] = torch.nn.functional.huber_loss(pred_met, true_met).mean()
         loss["Sliced_Wasserstein_Loss"] = sliced_wasserstein_loss(y["momentum"], ypred["momentum"]).detach().mean()
 
-    # add MET finetuning stuff
-    from torch_geometric.nn import global_add_pool
+    else:
+        # add MET finetuning stuff
+        from torch_geometric.nn import global_add_pool
 
-    px = ypred["momentum"][..., 0:1].detach() * ypred["momentum"][..., 3:4].detach() * msk_true_particle
-    py = ypred["momentum"][..., 0:1].detach() * ypred["momentum"][..., 2:3].detach() * msk_true_particle
+        pred_met = torch.sqrt(global_add_pool(px, batchidx_or_mask) ** 2 + global_add_pool(py, batchidx_or_mask) ** 2)
 
-    if met_finetuning:
-        px *= ypred["probX"]
-        py *= ypred["probX"]
+        px = y["momentum"][..., 0:1].detach() * y["momentum"][..., 3:4].detach() * msk_true_particle
+        py = y["momentum"][..., 0:1].detach() * y["momentum"][..., 2:3].detach() * msk_true_particle
+        true_met = torch.sqrt(global_add_pool(px, batchidx_or_mask) ** 2 + global_add_pool(py, batchidx_or_mask) ** 2)
 
-    pred_met = torch.sqrt(global_add_pool(px, batchidx_or_mask) ** 2 + global_add_pool(py, batchidx_or_mask) ** 2)
-
-    px = y["momentum"][..., 0:1].detach() * y["momentum"][..., 3:4].detach() * msk_true_particle
-    py = y["momentum"][..., 0:1].detach() * y["momentum"][..., 2:3].detach() * msk_true_particle
-    true_met = torch.sqrt(global_add_pool(px, batchidx_or_mask) ** 2 + global_add_pool(py, batchidx_or_mask) ** 2)
-
-    loss["MET"] = torch.nn.functional.huber_loss(pred_met, true_met)
+        loss["MET"] = torch.nn.functional.huber_loss(pred_met, true_met)
 
     if met_finetuning:
         loss["Total"] += loss["MET"]
@@ -136,7 +135,6 @@ def mlpf_loss(y, ypred, met_finetuning=False, batchidx_or_mask=False):
     loss["Regression"] = loss["Regression"].detach()
     loss["Charge"] = loss["Charge"].detach()
 
-    # if met_finetuning:
     loss["MET"] = loss["MET"].detach()
 
     return loss
