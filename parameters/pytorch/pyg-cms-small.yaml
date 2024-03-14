@@ -127,5 +127,7 @@ test_dataset:
       samples:
         cms_pf_ttbar:
           version: 1.6.0
+        cms_pf_qcd:
+          version: 1.6.0          
         cms_pf_qcd_high_pt:
           version: 1.6.0
