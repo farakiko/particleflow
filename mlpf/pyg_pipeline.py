@@ -128,9 +128,6 @@ def main():
         with open((Path(outdir) / config_filename), "w") as file:
             yaml.dump(config, file)
 
-        if (not args.train) and (not args.test) and (args.make_plots):
-            outdir = args.load
-
         if args.ray_train:
             run_ray_training(config, args, outdir)
         else:

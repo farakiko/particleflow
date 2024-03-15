@@ -768,6 +768,10 @@ def run(rank, world_size, config, args, outdir, logfile):
 
     if (rank == 0) or (rank == "cpu"):  # make plots and export to onnx only on a single machine
         if args.make_plots:
+
+            if (not args.train) and (not args.test) and (args.make_plots):
+                outdir = args.load
+
             for type_ in config["test_dataset"][config["dataset"]]:  # will be "physical", "gun"
                 for sample in config["test_dataset"][config["dataset"]][type_]["samples"]:
                     _logger.info(f"Plotting distributions for {sample}")
