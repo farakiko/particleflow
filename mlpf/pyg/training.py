@@ -771,7 +771,7 @@ def run(rank, world_size, config, args, outdir, logfile):
             for type_ in config["test_dataset"][config["dataset"]]:  # will be "physical", "gun"
                 for sample in config["test_dataset"][config["dataset"]][type_]["samples"]:
                     _logger.info(f"Plotting distributions for {sample}")
-
+                    print("outdir", outdir)
                     make_plots(outdir, sample, config["dataset"], testdir_name)
 
         if args.export_onnx:
