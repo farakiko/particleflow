@@ -158,10 +158,10 @@ def make_plots(outpath, sample, dataset, dir_name=""):
 
     mplhep.set_style(mplhep.styles.CMS)
 
-    os.system(f"mkdir -p {outpath}/plots{dir_name}/{sample}")
+    os.system(f"mkdir -p {outpath}/plots_{dir_name}/{sample}")
 
-    plots_path = Path(f"{outpath}/plots{dir_name}/{sample}/")
-    pred_path = Path(f"{outpath}/preds{dir_name}/{sample}/")
+    plots_path = Path(f"{outpath}/plots_{dir_name}/{sample}/")
+    pred_path = Path(f"{outpath}/preds_{dir_name}/{sample}/")
 
     yvals, X, _ = load_eval_data(str(pred_path / "*.parquet"), -1)
 
