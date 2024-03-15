@@ -773,11 +773,12 @@ def run(rank, world_size, config, args, outdir, logfile):
             #     outdir = args.load
             #     pred_path = args.
             outdir = str(Path(config["load"]).parent.parent)
+            plotcheckpoint = str(Path(config["load"]).parts[-1][:-4])
 
             for type_ in config["test_dataset"][config["dataset"]]:  # will be "physical", "gun"
                 for sample in config["test_dataset"][config["dataset"]][type_]["samples"]:
                     _logger.info(f"Plotting distributions for {sample}")
-                    make_plots(outdir, sample, config["dataset"], args.plotcheckpoint)
+                    make_plots(outdir, sample, config["dataset"], plotcheckpoint)
 
         if args.export_onnx:
             try:
