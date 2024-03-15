@@ -122,6 +122,10 @@ def main():
                 prefix=(args.prefix or "") + Path(args.config).stem + "_",
                 experiments_dir=args.experiments_dir if args.experiments_dir else "experiments",
             )
+
+        if (not args.train) and (not args.test) and (args.make_plots):
+            outdir = args.load
+
         # Save config for later reference. Note that saving happens after parameters are overwritten by cmd line args.
         config_filename = "train-config.yaml" if args.train else "test-config.yaml"
         with open((Path(outdir) / config_filename), "w") as file:
