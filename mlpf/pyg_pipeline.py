@@ -88,6 +88,8 @@ parser.add_argument(
 )
 parser.add_argument("--met-finetuning", action="store_true", default=None, help="will regress a probX per candidate")
 
+parser.add_argument("--in-memory", action="store_true", default=None, help="will load the data into memory before training")
+
 
 def main():
     # torch.multiprocessing.set_start_method('spawn')

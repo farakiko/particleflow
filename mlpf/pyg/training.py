@@ -675,29 +675,61 @@ def run(rank, world_size, config, args, outdir, logfile):
             pad_power_of_two,
             use_ray=False,
         )
+
         steps_per_epoch = len(loaders["train"])
         last_epoch = -1 if start_epoch == 1 else start_epoch - 1
         lr_schedule = get_lr_schedule(config, optimizer, config["num_epochs"], steps_per_epoch, last_epoch)
 
-        train_mlpf(
-            rank,
-            world_size,
-            model,
-            optimizer,
-            loaders["train"],
-            loaders["valid"],
-            config["num_epochs"],
-            config["patience"],
-            outdir,
-            dtype,
-            start_epoch=start_epoch,
-            lr_schedule=lr_schedule,
-            use_ray=False,
-            checkpoint_freq=config["checkpoint_freq"],
-            comet_experiment=comet_experiment,
-            comet_step_freq=config["comet_step_freq"],
-            met_finetuning=args.met_finetuning,
-        )
+        if args.in_memory:
+            _logger.info("'in-memory' is set to True so will load the dataset into memory before the training")
+
+            train_list = []
+            for batch in tqdm.tqdm(loaders["train"]):
+                train_list += [batch]
+
+            valid_list = []
+            for batch in tqdm.tqdm(loaders["valid"]):
+                valid_list += [batch]
+
+            train_mlpf(
+                rank,
+                world_size,
+                model,
+                optimizer,
+                train_list,
+                valid_list,
+                config["num_epochs"],
+                config["patience"],
+                outdir,
+                dtype,
+                start_epoch=start_epoch,
+                lr_schedule=lr_schedule,
+                use_ray=False,
+                checkpoint_freq=config["checkpoint_freq"],
+                comet_experiment=comet_experiment,
+                comet_step_freq=config["comet_step_freq"],
+                met_finetuning=args.met_finetuning,
+            )
+        else:
+            train_mlpf(
+                rank,
+                world_size,
+                model,
+                optimizer,
+                loaders["train"],
+                loaders["valid"],
+                config["num_epochs"],
+                config["patience"],
+                outdir,
+                dtype,
+                start_epoch=start_epoch,
+                lr_schedule=lr_schedule,
+                use_ray=False,
+                checkpoint_freq=config["checkpoint_freq"],
+                comet_experiment=comet_experiment,
+                comet_step_freq=config["comet_step_freq"],
+                met_finetuning=args.met_finetuning,
+            )
 
         checkpoint = torch.load(f"{outdir}/best_weights.pth", map_location=torch.device(rank))
         model, optimizer = load_checkpoint(checkpoint, model, optimizer)
