@@ -666,15 +666,27 @@ def run(rank, world_size, config, args, outdir, logfile):
         else:
             comet_experiment = None
 
-        loaders = get_interleaved_dataloaders(
-            world_size,
-            rank,
-            config,
-            use_cuda,
-            pad_3d,
-            pad_power_of_two,
-            use_ray=False,
-        )
+        if args.in_memory:
+            loaders = get_interleaved_dataloaders(
+                world_size,
+                rank,
+                config,
+                False,
+                pad_3d,
+                pad_power_of_two,
+                use_ray=False,
+            )
+
+        else:
+            loaders = get_interleaved_dataloaders(
+                world_size,
+                rank,
+                config,
+                use_cuda,
+                pad_3d,
+                pad_power_of_two,
+                use_ray=False,
+            )
 
         steps_per_epoch = len(loaders["train"])
         last_epoch = -1 if start_epoch == 1 else start_epoch - 1
