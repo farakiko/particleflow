@@ -1,49 +1,47 @@
+import csv
+import logging
 import os
 import os.path as osp
 import pickle as pkl
+import shutil
 import time
+from datetime import datetime
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Optional
-import logging
-import shutil
-from datetime import datetime
-import tqdm
-import yaml
-import csv
 
+import fastjet
 import numpy as np
-
-# comet needs to be imported before torch
-from comet_ml import OfflineExperiment, Experiment  # noqa: F401, isort:skip
 import torch
 import torch.distributed as dist
 import torch.multiprocessing as mp
+import tqdm
+import yaml
+from pyg.inference import make_plots, run_predictions
+from pyg.logger import _configLogger, _logger
+from pyg.mlpf import MLPF
+from pyg.PFDataset import Collater, PFDataLoader, PFDataset, get_interleaved_dataloaders
+from pyg.utils import (
+    CLASS_LABELS,
+    X_FEATURES,
+    count_parameters,
+    get_lr_schedule,
+    get_model_state_dict,
+    load_checkpoint,
+    save_checkpoint,
+    save_HPs,
+    unpack_predictions,
+    unpack_target,
+)
 from torch import Tensor, nn
 from torch.nn import functional as F
 from torch.profiler import ProfilerActivity, profile, record_function
 from torch.utils.tensorboard import SummaryWriter
-
-from pyg.logger import _logger, _configLogger
-from pyg.utils import (
-    unpack_predictions,
-    unpack_target,
-    get_model_state_dict,
-    load_checkpoint,
-    save_checkpoint,
-    CLASS_LABELS,
-    X_FEATURES,
-    save_HPs,
-    get_lr_schedule,
-    count_parameters,
-)
-
-
-import fastjet
-from pyg.inference import make_plots, run_predictions
-from pyg.mlpf import MLPF
-from pyg.PFDataset import Collater, PFDataLoader, PFDataset, get_interleaved_dataloaders
 from utils import create_comet_experiment
+
+# comet needs to be imported before torch
+from comet_ml import OfflineExperiment, Experiment  # noqa: F401, isort:skip
+
 
 # Ignore divide by 0 errors
 np.seterr(divide="ignore", invalid="ignore")
@@ -707,6 +705,9 @@ def run(rank, world_size, config, args, outdir, logfile):
         else:
             comet_experiment = None
 
+        if args.in_memory:
+            use_cuda = False  # no need to pin to cuda
+
         loaders = get_interleaved_dataloaders(
             world_size,
             rank,
@@ -716,6 +717,20 @@ def run(rank, world_size, config, args, outdir, logfile):
             pad_power_of_two,
             use_ray=False,
         )
+
+        if args.in_memory:
+            _logger.info("'in-memory' is set to True so will load the dataset into memory before the training")
+
+            train_list = []
+            for batch in tqdm.tqdm(loaders["train"]):
+                train_list += [batch]
+            loaders["train"] = train_list
+
+            valid_list = []
+            for batch in tqdm.tqdm(loaders["valid"]):
+                valid_list += [batch]
+            loaders["valid"] = valid_list
+
         steps_per_epoch = len(loaders["train"])
         last_epoch = -1 if start_epoch == 1 else start_epoch - 1
         lr_schedule = get_lr_schedule(config, optimizer, config["num_epochs"], steps_per_epoch, last_epoch)
@@ -1107,7 +1122,6 @@ def run_hpo(config, args):
     import ray
     from ray import tune
     from ray.train.torch import TorchTrainer
-
     from raytune.pt_search_space import raytune_num_samples, search_space
     from raytune.utils import get_raytune_schedule, get_raytune_search_alg
 

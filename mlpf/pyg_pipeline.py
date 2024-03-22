@@ -8,12 +8,13 @@ import argparse
 import logging
 from pathlib import Path
 
-# comet needs to be imported before torch
-from comet_ml import OfflineExperiment, Experiment  # noqa: F401, isort:skip
-
 import yaml
 from pyg.training import device_agnostic_run, override_config, run_hpo, run_ray_training
 from utils import create_experiment_dir
+
+# comet needs to be imported before torch
+from comet_ml import OfflineExperiment, Experiment  # noqa: F401, isort:skip
+
 
 logging.basicConfig(level=logging.INFO)
 
@@ -86,6 +87,7 @@ parser.add_argument(
     help="attention type for self-attention layer",
     choices=["math", "efficient", "flash"],
 )
+parser.add_argument("--in-memory", action="store_true", default=None, help="will load the data into memory before training")
 
 
 def main():
