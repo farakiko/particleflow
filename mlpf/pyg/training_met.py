@@ -178,7 +178,8 @@ def train_and_valid(
                 if itrain % 10 == 0:
                     tensorboard_writer.flush()
                 loss_accum = 0.0
-
+        if itrain == 10:
+            break
     num_data = torch.tensor(len(data_loader), device=rank)
     # sum up the number of steps from all workers
 
