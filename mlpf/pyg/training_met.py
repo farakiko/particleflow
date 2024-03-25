@@ -163,8 +163,6 @@ def train_and_valid(
             loss["MET"].backward()
             loss_accum += loss["MET"].detach().cpu().item()
             optimizer.step()
-            if lr_schedule:
-                lr_schedule.step()
 
         for loss_ in loss.keys():
             if loss_ not in epoch_loss:
@@ -177,7 +175,6 @@ def train_and_valid(
                 tensorboard_writer.add_scalar("step/loss", loss_accum / num_elems, step)
                 tensorboard_writer.add_scalar("step/num_elems", num_elems, step)
                 tensorboard_writer.add_scalar("step/num_batch", num_batch, step)
-                tensorboard_writer.add_scalar("step/learning_rate", lr_schedule.get_last_lr()[0], step)
                 if itrain % 10 == 0:
                     tensorboard_writer.flush()
                 loss_accum = 0.0
@@ -204,7 +201,6 @@ def train_mlpf(
     outdir,
     trainable="all",
     dtype=torch.float32,
-    lr_schedule=None,
     checkpoint_freq=None,
 ):
     """
@@ -253,7 +249,6 @@ def train_mlpf(
             valid_loader=valid_loader,
             trainable=trainable,
             is_train=True,
-            lr_schedule=lr_schedule,
             epoch=epoch,
             dtype=dtype,
             tensorboard_writer=tensorboard_writer_train,
@@ -268,15 +263,12 @@ def train_mlpf(
             valid_loader=valid_loader,
             trainable=trainable,
             is_train=False,
-            lr_schedule=None,
             epoch=epoch,
             dtype=dtype,
         )
         print(losses_v.keys())
 
-        tensorboard_writer_train.add_scalar("epoch/learning_rate", lr_schedule.get_last_lr()[0], epoch)
-
-        extra_state = {"epoch": epoch, "lr_schedule_state_dict": lr_schedule.state_dict()}
+        extra_state = {"epoch": epoch}
         if losses_v["MET"] < best_val_loss:
             best_val_loss = losses_v["MET"]
             stale_epochs = 0
