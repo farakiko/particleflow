@@ -15,7 +15,7 @@ from pyg.logger import _configLogger, _logger
 from pyg.mlpf import MLPF
 from pyg.PFDataset import get_interleaved_dataloaders
 from pyg.training_met import override_config, train_mlpf
-from pyg.utils import get_lr_schedule, load_checkpoint, save_HPs
+from pyg.utils import load_checkpoint, save_HPs
 from utils import create_experiment_dir
 
 logging.basicConfig(level=logging.INFO)
@@ -169,8 +169,6 @@ def main():
             pad_3d,
             use_ray=False,
         )
-        steps_per_epoch = len(loaders["train"])
-        lr_schedule = get_lr_schedule(config, optimizer, config["num_epochs"], steps_per_epoch, -1)
 
         train_mlpf(
             rank,
@@ -183,7 +181,6 @@ def main():
             outdir,
             trainable=config["model"]["trainable"],
             dtype=dtype,
-            lr_schedule=lr_schedule,
             checkpoint_freq=config["checkpoint_freq"],
         )
 
