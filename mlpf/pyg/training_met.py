@@ -142,8 +142,8 @@ def train_and_valid(
                 if itrain % 10 == 0:
                     tensorboard_writer.flush()
                 loss_accum = 0.0
-        if itrain == 10:
-            break
+        # if itrain == 10:
+        #     break
     num_data = torch.tensor(len(data_loader), device=rank)
     # sum up the number of steps from all workers
 
@@ -151,7 +151,6 @@ def train_and_valid(
         # sum up the losses from all workers
         epoch_loss[loss_] = epoch_loss[loss_].cpu().item() / num_data.cpu().item()
 
-    print("epoch_loss", epoch_loss)
     return epoch_loss
 
 
