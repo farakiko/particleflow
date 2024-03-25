@@ -4,13 +4,13 @@ from pathlib import Path
 
 import numpy as np
 import torch
+import torch.nn as nn
 import tqdm
 from pyg.logger import _logger
 from pyg.training import FocalLoss
-from pyg.utils import (
+from pyg.utils import (  # unpack_predictions,
     get_model_state_dict,
     save_checkpoint,
-    unpack_predictions,
     unpack_target,
 )
 from torch.utils.tensorboard import SummaryWriter
@@ -97,6 +97,43 @@ def configure_model_trainable(model, trainable, is_training):
         model.eval()
 
 
+class DeepMET(nn.Module):
+    def __init__(
+        self,
+        width=128,
+    ):
+        super(DeepMET, self).__init__()
+
+        self.act = nn.ELU
+
+        regression_nodes = 5
+        self.input_dim = regression_nodes
+
+        self.nn_encoder = nn.Sequential(
+            nn.Linear(self.input_dim, width),
+            self.act(),
+            nn.Linear(width, width),
+            self.act(),
+            nn.Linear(width, width),
+        )
+
+        self.nn_decoder = nn.Sequential(
+            nn.Linear(width, width),
+            self.act(),
+            nn.Linear(width, 1),
+        )
+
+    # @torch.compile
+    def forward(self, X):
+
+        probX = self.nn_encoder(X)
+
+        encoded_element = probX.sum(axis=1)  # sum over particles
+        MET = self.nn_decoder(encoded_element)
+
+        return MET
+
+
 def train_and_valid(
     rank,
     model,
@@ -110,6 +147,14 @@ def train_and_valid(
     dtype=torch.float32,
     tensorboard_writer=None,
 ):
+
+    model_DeepMET = DeepMET()
+    optimizer = torch.optim.AdamW(model_DeepMET.parameters(), lr=1e-3)
+
+    model_DeepMET.to(rank)
+    model_DeepMET.train()
+    configure_model_trainable(model_DeepMET, trainable, is_train)
+
     """
     Performs training over a given epoch. Will run a validation step every N_STEPS and after the last training batch.
     """
@@ -120,7 +165,6 @@ def train_and_valid(
     # this one will keep accumulating `train_loss` and then return the average
     epoch_loss = {}
 
-    configure_model_trainable(model, trainable, is_train)
     if is_train:
         data_loader = train_loader
     else:
@@ -131,39 +175,57 @@ def train_and_valid(
         enumerate(data_loader), total=len(data_loader), desc=f"Epoch {epoch} {train_or_valid} loop on rank={rank}"
     )
 
-    device_type = "cuda" if isinstance(rank, int) else "cpu"
+    # device_type = "cuda" if isinstance(rank, int) else "cpu"
 
     loss_accum = 0.0
     for itrain, batch in iterator:
+
         batch = batch.to(rank, non_blocking=True)
-
         ygen = unpack_target(batch.ygen)
+        ycand = unpack_target(batch.ycand)
 
-        batchidx_or_mask = batch.mask
         num_elems = batch.X[batch.mask].shape[0]
         num_batch = batch.X.shape[0]
 
-        with torch.autocast(device_type=device_type, dtype=dtype, enabled=device_type == "cuda"):
-            if is_train:
-                ypred = model(batch.X, batchidx_or_mask)
-            else:
-                with torch.no_grad():
-                    ypred = model(batch.X, batchidx_or_mask)
+        # with torch.autocast(device_type=device_type, dtype=dtype, enabled=device_type == "cuda"):
+        #     if is_train:
+        #         ypred = model(batch.X, batchidx_or_mask)
+        #     else:
+        #         with torch.no_grad():
+        #             ypred = model(batch.X, batchidx_or_mask)
+        # ypred = unpack_predictions(ypred)
 
-        ypred = unpack_predictions(ypred)
+        # with torch.autocast(device_type=device_type, dtype=dtype, enabled=device_type == "cuda"):
+        #     if is_train:
+        #         loss = mlpf_loss(ygen, ypred, batchidx_or_mask)
+        #         for param in model.parameters():
+        #             param.grad = None
+        #     else:
+        #         with torch.no_grad():
+        #             loss = mlpf_loss(ygen, ypred, batchidx_or_mask)
 
-        with torch.autocast(device_type=device_type, dtype=dtype, enabled=device_type == "cuda"):
-            if is_train:
-                loss = mlpf_loss(ygen, ypred, batchidx_or_mask)
-                for param in model.parameters():
-                    param.grad = None
-            else:
-                with torch.no_grad():
-                    loss = mlpf_loss(ygen, ypred, batchidx_or_mask)
+        # candmet idea
+        msk_ycand = ycand["cls_id"] != 0
+        cand_px = (ycand["pt"] * ycand["cos_phi"]) * msk_ycand
+        cand_py = (ycand["pt"] * ycand["sin_phi"]) * msk_ycand
+
+        cand_met = torch.sqrt(torch.sum(cand_px, axis=1) ** 2 + torch.sum(cand_py, axis=1) ** 2).unsqueeze(-1)
+
+        p4_masked = ycand["momentum"] * msk_ycand.unsqueeze(-1)
+        pred_met = model_DeepMET(p4_masked)
+
+        # genMET
+        msk_gen = ygen["cls_id"] != 0
+        gen_px = (ygen["pt"] * ygen["cos_phi"]) * msk_gen
+        gen_py = (ygen["pt"] * ygen["sin_phi"]) * msk_gen
+
+        true_met = torch.sqrt(torch.sum(gen_px, axis=1) ** 2 + torch.sum(gen_py, axis=1) ** 2).unsqueeze(-1)
+
+        loss = torch.nn.functional.huber_loss(cand_met + pred_met, true_met)
 
         if is_train:
-            loss["Total"].backward()
-            loss_accum += loss["Total"].detach().cpu().item()
+            loss["MET"].backward()
+            loss_accum += loss["MET"].detach().cpu().item()
             optimizer.step()
             if lr_schedule:
                 lr_schedule.step()
@@ -225,7 +287,7 @@ def train_mlpf(
 
     t0_initial = time.time()
 
-    losses_of_interest = ["Total", "Classification", "Regression"]
+    losses_of_interest = ["MET"]
 
     losses = {}
     losses["train"], losses["valid"] = {}, {}
