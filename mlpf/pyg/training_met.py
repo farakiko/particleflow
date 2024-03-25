@@ -251,6 +251,7 @@ def train_mlpf(
             dtype=dtype,
             tensorboard_writer=tensorboard_writer_train,
         )
+        print(losses_t.keys())
 
         losses_v = train_and_valid(
             rank,
@@ -264,6 +265,7 @@ def train_mlpf(
             epoch=epoch,
             dtype=dtype,
         )
+        print(losses_v.keys())
 
         tensorboard_writer_train.add_scalar("epoch/learning_rate", lr_schedule.get_last_lr()[0], epoch)
 
