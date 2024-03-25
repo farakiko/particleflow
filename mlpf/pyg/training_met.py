@@ -395,7 +395,6 @@ def override_config(config, args):
         for model in ["gnn_lsh", "gravnet", "attention", "attention", "mamba"]:
             config["model"][model]["num_convs"] = args.num_convs
 
-    if len(args.test_datasets) == 0:
-        args.test_datasets = config["test_dataset"]
+    args.test_datasets = config["test_dataset"]
 
     return config
