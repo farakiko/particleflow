@@ -159,8 +159,6 @@ def train_and_valid(
 
         loss["MET"] = torch.nn.functional.huber_loss(cand_met + pred_met, true_met)
 
-        print(loss)
-
         if is_train:
             loss["MET"].backward()
             loss_accum += loss["MET"].detach().cpu().item()
