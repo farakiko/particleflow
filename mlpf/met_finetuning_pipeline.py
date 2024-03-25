@@ -6,16 +6,20 @@ Authors: Farouk Mokhtar, Joosep Pata, Eric Wulff
 
 import argparse
 import logging
-import pickle as pkl
+
+# import pickle as pkl
 from pathlib import Path
 
 import torch
 import yaml
 from pyg.logger import _configLogger, _logger
-from pyg.mlpf import MLPF
+
+# from pyg.mlpf import MLPF
 from pyg.PFDataset import get_interleaved_dataloaders
 from pyg.training_met import override_config, train_mlpf
-from pyg.utils import load_checkpoint, save_HPs
+from pyg.utils import save_HPs
+
+# from pyg.utils import load_checkpoint
 from utils import create_experiment_dir
 
 logging.basicConfig(level=logging.INFO)
@@ -78,6 +82,45 @@ parser.add_argument(
     choices=["math", "efficient", "flash", "flash_external"],
 )
 
+import torch.nn as nn
+
+
+class DeepMET(nn.Module):
+    def __init__(
+        self,
+        width=128,
+    ):
+        super(DeepMET, self).__init__()
+
+        self.act = nn.ELU
+
+        regression_nodes = 5
+        self.input_dim = regression_nodes
+
+        self.nn_encoder = nn.Sequential(
+            nn.Linear(self.input_dim, width),
+            self.act(),
+            nn.Linear(width, width),
+            self.act(),
+            nn.Linear(width, width),
+        )
+
+        self.nn_decoder = nn.Sequential(
+            nn.Linear(width, width),
+            self.act(),
+            nn.Linear(width, 1),
+        )
+
+    # @torch.compile
+    def forward(self, X):
+
+        probX = self.nn_encoder(X)
+
+        encoded_element = probX.sum(axis=1)  # sum over particles
+        MET = self.nn_decoder(encoded_element)
+
+        return MET
+
 
 def main():
     args = parser.parse_args()
@@ -134,27 +177,34 @@ def main():
 
     _configLogger("mlpf", filename=logfile)
 
-    # load the mlpf model
-    with open(f"{loaddir}/model_kwargs.pkl", "rb") as f:
-        model_kwargs = pkl.load(f)
-    _logger.info("model_kwargs: {}".format(model_kwargs))
+    # # load the mlpf model
+    # with open(f"{loaddir}/model_kwargs.pkl", "rb") as f:
+    #     model_kwargs = pkl.load(f)
+    # _logger.info("model_kwargs: {}".format(model_kwargs))
 
-    model_kwargs["attention_type"] = config["model"]["attention"]["attention_type"]
+    # model_kwargs["attention_type"] = config["model"]["attention"]["attention_type"]
 
-    model = MLPF(**model_kwargs).to(torch.device(rank))
-    optimizer = torch.optim.AdamW(model.parameters(), lr=config["lr"])
+    # model = MLPF(**model_kwargs).to(torch.device(rank))
+    # optimizer = torch.optim.AdamW(model.parameters(), lr=config["lr"])
 
-    checkpoint = torch.load(config["load"], map_location=torch.device(rank))
+    # checkpoint = torch.load(config["load"], map_location=torch.device(rank))
 
-    for k in model.state_dict().keys():
-        shp0 = model.state_dict()[k].shape
-        shp1 = checkpoint["model_state_dict"][k].shape
-        if shp0 != shp1:
-            raise Exception("shape mismatch in {}, {}!={}".format(k, shp0, shp1))
+    # for k in model.state_dict().keys():
+    #     shp0 = model.state_dict()[k].shape
+    #     shp1 = checkpoint["model_state_dict"][k].shape
+    #     if shp0 != shp1:
+    #         raise Exception("shape mismatch in {}, {}!={}".format(k, shp0, shp1))
 
-    _logger.info("Loaded model weights from {}".format(config["load"]), color="bold")
+    # _logger.info("Loaded model weights from {}".format(config["load"]), color="bold")
 
-    model, optimizer = load_checkpoint(checkpoint, model, optimizer)
+    # model, optimizer = load_checkpoint(checkpoint, model, optimizer)
+
+    model = DeepMET()
+    optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4)
+    model_kwargs = {}
+
+    model.to(rank)
+    model.train()
 
     if args.train:
         save_HPs(args, model, model_kwargs, outdir)  # save model_kwargs and hyperparameters
@@ -183,9 +233,6 @@ def main():
             dtype=dtype,
             checkpoint_freq=config["checkpoint_freq"],
         )
-
-        checkpoint = torch.load(f"{outdir}/best_weights.pth", map_location=torch.device(rank))
-        model, optimizer = load_checkpoint(checkpoint, model, optimizer)
 
 
 if __name__ == "__main__":

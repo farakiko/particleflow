@@ -4,7 +4,8 @@ from pathlib import Path
 
 import numpy as np
 import torch
-import torch.nn as nn
+
+# import torch.nn as nn
 import tqdm
 from pyg.logger import _logger
 
@@ -35,43 +36,6 @@ def configure_model_trainable(model, trainable, is_training):
                     param.requires_grad = True
     else:
         model.eval()
-
-
-class DeepMET(nn.Module):
-    def __init__(
-        self,
-        width=128,
-    ):
-        super(DeepMET, self).__init__()
-
-        self.act = nn.ELU
-
-        regression_nodes = 5
-        self.input_dim = regression_nodes
-
-        self.nn_encoder = nn.Sequential(
-            nn.Linear(self.input_dim, width),
-            self.act(),
-            nn.Linear(width, width),
-            self.act(),
-            nn.Linear(width, width),
-        )
-
-        self.nn_decoder = nn.Sequential(
-            nn.Linear(width, width),
-            self.act(),
-            nn.Linear(width, 1),
-        )
-
-    # @torch.compile
-    def forward(self, X):
-
-        probX = self.nn_encoder(X)
-
-        encoded_element = probX.sum(axis=1)  # sum over particles
-        MET = self.nn_decoder(encoded_element)
-
-        return MET
 
 
 def train_and_valid(
@@ -216,14 +180,6 @@ def train_mlpf(
         outdir: path to store the model weights and training plots
     """
 
-    # DeepMET - START
-    model = DeepMET()
-    optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3)
-
-    model.to(rank)
-    model.train()
-    # DeepMET - END
-
     tensorboard_writer_train = SummaryWriter(f"{outdir}/runs/train")
     tensorboard_writer_valid = SummaryWriter(f"{outdir}/runs/valid")
 
@@ -254,7 +210,6 @@ def train_mlpf(
             dtype=dtype,
             tensorboard_writer=tensorboard_writer_train,
         )
-        print(losses_t.keys())
 
         losses_v = train_and_valid(
             rank,
@@ -267,7 +222,6 @@ def train_mlpf(
             epoch=epoch,
             dtype=dtype,
         )
-        print(losses_v.keys())
 
         extra_state = {"epoch": epoch}
         if losses_v["MET"] < best_val_loss:
