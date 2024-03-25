@@ -7,7 +7,8 @@ import torch
 import torch.nn as nn
 import tqdm
 from pyg.logger import _logger
-from pyg.training import FocalLoss
+
+# from pyg.training import FocalLoss
 from pyg.utils import (  # unpack_predictions,
     get_model_state_dict,
     save_checkpoint,
@@ -17,67 +18,6 @@ from torch.utils.tensorboard import SummaryWriter
 
 # Ignore divide by 0 errors
 np.seterr(divide="ignore", invalid="ignore")
-
-
-def mlpf_loss(y, ypred, batchidx_or_mask):
-    """
-    Args
-        y [dict]: relevant keys are "cls_id, momentum, charge"
-        ypred [dict]: relevant keys are "cls_id_onehot, momentum, charge"
-    """
-    loss = {}
-    loss_obj_id = FocalLoss(gamma=2.0, reduction="none")
-
-    msk_true_particle = torch.unsqueeze((y["cls_id"] != 0).to(dtype=torch.float32), axis=-1)
-
-    nelem = torch.sum(batchidx_or_mask)
-
-    npart = torch.sum(y["cls_id"] != 0)
-
-    ypred["momentum"] = ypred["momentum"] * msk_true_particle
-    # ypred["charge"] = ypred["charge"] * msk_true_particle
-    y["momentum"] = y["momentum"] * msk_true_particle
-    # y["charge"] = y["charge"] * msk_true_particle[..., 0]
-
-    # in case of the 3D-padded mode, pytorch expects (N, C, ...)
-    ypred["cls_id_onehot"] = ypred["cls_id_onehot"].permute((0, 2, 1))
-    # ypred["charge"] = ypred["charge"].permute((0, 2, 1))
-
-    loss_classification = 100 * loss_obj_id(ypred["cls_id_onehot"], y["cls_id"]).reshape(y["cls_id"].shape)
-    loss_regression = 10 * torch.nn.functional.huber_loss(ypred["momentum"], y["momentum"], reduction="none")
-    # loss_charge = 0.0*torch.nn.functional.cross_entropy(
-    #     ypred["charge"], y["charge"].to(dtype=torch.int64), reduction="none")
-
-    # average over all elements that were not padded
-    loss["Classification"] = loss_classification.sum() / nelem
-
-    # normalize loss with stddev to stabilize across batches with very different pt, E distributions
-    mom_normalizer = y["momentum"][y["cls_id"] != 0].std(axis=0)
-    reg_losses = loss_regression[y["cls_id"] != 0]
-    # average over all true particles
-    loss["Regression"] = (reg_losses / mom_normalizer).sum() / npart
-    # loss["Charge"] = loss_charge.sum() / npart
-
-    # we can compute a few additional event-level monitoring losses
-    msk_pred_particle = torch.unsqueeze(torch.argmax(ypred["cls_id_onehot"].detach(), axis=1) != 0, axis=-1)
-
-    px = ypred["momentum"][..., 0:1] * ypred["momentum"][..., 3:4] * msk_pred_particle  # pt * cos_phi
-    py = ypred["momentum"][..., 0:1] * ypred["momentum"][..., 2:3] * msk_pred_particle  # pt * sin_phi
-    pred_met = torch.sum(px, axis=-2) ** 2 + torch.sum(py, axis=-2) ** 2
-
-    px = y["momentum"][..., 0:1] * y["momentum"][..., 3:4] * msk_true_particle
-    py = y["momentum"][..., 0:1] * y["momentum"][..., 2:3] * msk_true_particle
-    true_met = torch.sum(px, axis=-2) ** 2 + torch.sum(py, axis=-2) ** 2
-
-    loss["MET"] = torch.nn.functional.huber_loss(pred_met, true_met).detach().mean()
-
-    loss["Total"] = loss["Classification"] + loss["Regression"]  # + loss["Charge"]
-
-    loss["Classification"] = loss["Classification"].detach()
-    loss["Regression"] = loss["Regression"].detach()
-    # loss["Charge"] = loss["Charge"].detach()
-    # print(loss["Total"].detach().item(), y["cls_id"].shape, nelem, npart)
-    return loss
 
 
 def configure_model_trainable(model, trainable, is_training):
@@ -332,8 +272,8 @@ def train_mlpf(
         tensorboard_writer_train.add_scalar("epoch/learning_rate", lr_schedule.get_last_lr()[0], epoch)
 
         extra_state = {"epoch": epoch, "lr_schedule_state_dict": lr_schedule.state_dict()}
-        if losses_v["Total"] < best_val_loss:
-            best_val_loss = losses_v["Total"]
+        if losses_v["MET"] < best_val_loss:
+            best_val_loss = losses_v["MET"]
             stale_epochs = 0
             torch.save(
                 {"model_state_dict": get_model_state_dict(model), "optimizer_state_dict": optimizer.state_dict()},
@@ -346,7 +286,7 @@ def train_mlpf(
         if checkpoint_freq and (epoch != 0) and (epoch % checkpoint_freq == 0):
             checkpoint_dir = Path(outdir) / "checkpoints"
             checkpoint_dir.mkdir(exist_ok=True)
-            checkpoint_path = "{}/checkpoint-{:02d}-{:.6f}.pth".format(checkpoint_dir, epoch, losses_v["Total"])
+            checkpoint_path = "{}/checkpoint-{:02d}-{:.6f}.pth".format(checkpoint_dir, epoch, losses_v["MET"])
             save_checkpoint(checkpoint_path, model, optimizer, extra_state)
 
         if stale_epochs > patience:
@@ -370,8 +310,8 @@ def train_mlpf(
 
         _logger.info(
             f"Rank {rank}: epoch={epoch} / {num_epochs} "
-            + f"train_loss={losses_t['Total']:.4f} "
-            + f"valid_loss={losses_v['Total']:.4f} "
+            + f"train_loss={losses_t['MET']:.4f} "
+            + f"valid_loss={losses_v['MET']:.4f} "
             + f"stale={stale_epochs} "
             + f"time={round((t1-t0)/60, 2)}m "
             + f"eta={round(eta, 1)}m",
