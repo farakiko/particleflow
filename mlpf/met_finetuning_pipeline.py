@@ -14,8 +14,7 @@ import yaml
 from pyg.logger import _configLogger, _logger
 from pyg.mlpf import MLPF
 from pyg.PFDataset import get_interleaved_dataloaders
-from pyg.training import override_config
-from pyg.training_met import train_mlpf
+from pyg.training_met import override_config, train_mlpf
 from pyg.utils import get_lr_schedule, load_checkpoint, save_HPs
 from utils import create_experiment_dir
 

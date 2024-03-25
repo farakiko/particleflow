@@ -379,3 +379,23 @@ def train_mlpf(
             tensorboard_writer_valid.flush()
 
     _logger.info(f"Done with training. Total training time on device {rank} is {round((time.time() - t0_initial)/60,3)}min")
+
+
+def override_config(config, args):
+    """override config with values from argparse Namespace"""
+    for arg in vars(args):
+        arg_value = getattr(args, arg)
+        if arg_value is not None:
+            config[arg] = arg_value
+
+    if not (args.attention_type is None):
+        config["model"]["attention"]["attention_type"] = args.attention_type
+
+    if not (args.num_convs is None):
+        for model in ["gnn_lsh", "gravnet", "attention", "attention", "mamba"]:
+            config["model"][model]["num_convs"] = args.num_convs
+
+    if len(args.test_datasets) == 0:
+        args.test_datasets = config["test_dataset"]
+
+    return config
