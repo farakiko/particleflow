@@ -115,7 +115,6 @@ def train_and_valid(
         enumerate(data_loader), total=len(data_loader), desc=f"Epoch {epoch} {train_or_valid} loop on rank={rank}"
     )
 
-    print("train_loader", len(train_loader))
     # device_type = "cuda" if isinstance(rank, int) else "cpu"
 
     loss = {}

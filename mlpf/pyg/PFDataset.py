@@ -1,16 +1,14 @@
 from types import SimpleNamespace
 from typing import List, Optional
 
+import numpy as np
 import tensorflow_datasets as tfds
 import torch
 import torch.utils.data
 import torch_geometric
+from pyg.logger import _logger
 from torch import Tensor
 from torch_geometric.data import Batch, Data
-
-from pyg.logger import _logger
-
-import numpy as np
 
 
 class TFDSDataSource:
@@ -220,7 +218,7 @@ def get_interleaved_dataloaders(world_size, rank, config, use_cuda, pad_3d, use_
             loader = PFDataLoader(
                 dataset,
                 batch_size=batch_size,
-                collate_fn=Collater(["X", "ygen"], pad_3d=pad_3d),
+                collate_fn=Collater(["X", "ygen", "ycand"], pad_3d=pad_3d),
                 sampler=sampler,
                 num_workers=config["num_workers"],
                 prefetch_factor=config["prefetch_factor"],

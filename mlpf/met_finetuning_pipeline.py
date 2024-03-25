@@ -172,7 +172,6 @@ def main():
         steps_per_epoch = len(loaders["train"])
         lr_schedule = get_lr_schedule(config, optimizer, config["num_epochs"], steps_per_epoch, -1)
 
-        print("LENGTH", len(loaders["train"]))
         train_mlpf(
             rank,
             model,
