@@ -126,7 +126,7 @@ def main():
         rank = "cpu"
         _logger.info("Will use cpu", color="purple")
 
-    pad_3d = config["conv_type"] != "gravnet"
+    pad_3d = True
     use_cuda = rank != "cpu"
 
     dtype = getattr(torch, config["dtype"])
@@ -139,8 +139,7 @@ def main():
         model_kwargs = pkl.load(f)
     _logger.info("model_kwargs: {}".format(model_kwargs))
 
-    if config["conv_type"] == "attention":
-        model_kwargs["attention_type"] = config["model"]["attention"]["attention_type"]
+    model_kwargs["attention_type"] = config["model"]["attention"]["attention_type"]
 
     model = MLPF(**model_kwargs).to(torch.device(rank))
     optimizer = torch.optim.AdamW(model.parameters(), lr=config["lr"])
@@ -173,6 +172,7 @@ def main():
         steps_per_epoch = len(loaders["train"])
         lr_schedule = get_lr_schedule(config, optimizer, config["num_epochs"], steps_per_epoch, -1)
 
+        print("LENGTH", len(loaders["train"]))
         train_mlpf(
             rank,
             model,
