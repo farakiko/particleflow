@@ -88,12 +88,7 @@ def train_and_valid(
     tensorboard_writer=None,
 ):
 
-    model_DeepMET = DeepMET()
-    optimizer = torch.optim.AdamW(model_DeepMET.parameters(), lr=1e-3)
-
-    model_DeepMET.to(rank)
-    model_DeepMET.train()
-    configure_model_trainable(model_DeepMET, trainable, is_train)
+    configure_model_trainable(model, trainable, is_train)
 
     """
     Performs training over a given epoch. Will run a validation step every N_STEPS and after the last training batch.
@@ -153,7 +148,7 @@ def train_and_valid(
         cand_met = torch.sqrt(torch.sum(cand_px, axis=1) ** 2 + torch.sum(cand_py, axis=1) ** 2).unsqueeze(-1)
 
         p4_masked = ycand["momentum"] * msk_ycand.unsqueeze(-1)
-        pred_met = model_DeepMET(p4_masked)
+        pred_met = model(p4_masked)
 
         # genMET
         msk_gen = ygen["cls_id"] != 0
@@ -225,6 +220,14 @@ def train_mlpf(
         patience: number of stale epochs before stopping the training
         outdir: path to store the model weights and training plots
     """
+
+    # DeepMET - START
+    model = DeepMET()
+    optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3)
+
+    model.to(rank)
+    model.train()
+    # DeepMET - END
 
     tensorboard_writer_train = SummaryWriter(f"{outdir}/runs/train")
     tensorboard_writer_valid = SummaryWriter(f"{outdir}/runs/valid")
