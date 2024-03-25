@@ -1,5 +1,3 @@
-import csv
-import os
 import pickle as pkl
 import time
 from pathlib import Path
@@ -62,16 +60,15 @@ def mlpf_loss(y, ypred, batchidx_or_mask):
 
     # we can compute a few additional event-level monitoring losses
     msk_pred_particle = torch.unsqueeze(torch.argmax(ypred["cls_id_onehot"].detach(), axis=1) != 0, axis=-1)
-    # pt * cos_phi
-    px = ypred["momentum"][..., 0:1] * ypred["momentum"][..., 3:4] * msk_pred_particle
-    # pt * sin_phi
-    py = ypred["momentum"][..., 0:1] * ypred["momentum"][..., 2:3] * msk_pred_particle
-    # sum across events
+
+    px = ypred["momentum"][..., 0:1] * ypred["momentum"][..., 3:4] * msk_pred_particle  # pt * cos_phi
+    py = ypred["momentum"][..., 0:1] * ypred["momentum"][..., 2:3] * msk_pred_particle  # pt * sin_phi
     pred_met = torch.sum(px, axis=-2) ** 2 + torch.sum(py, axis=-2) ** 2
 
     px = y["momentum"][..., 0:1] * y["momentum"][..., 3:4] * msk_true_particle
     py = y["momentum"][..., 0:1] * y["momentum"][..., 2:3] * msk_true_particle
     true_met = torch.sum(px, axis=-2) ** 2 + torch.sum(py, axis=-2) ** 2
+
     loss["MET"] = torch.nn.functional.huber_loss(pred_met, true_met).detach().mean()
 
     loss["Total"] = loss["Classification"] + loss["Regression"]  # + loss["Charge"]
@@ -102,7 +99,6 @@ def configure_model_trainable(model, trainable, is_training):
 
 def train_and_valid(
     rank,
-    outdir,
     model,
     optimizer,
     train_loader,
@@ -111,7 +107,6 @@ def train_and_valid(
     is_train=True,
     lr_schedule=None,
     epoch=None,
-    val_freq=None,
     dtype=torch.float32,
     tensorboard_writer=None,
 ):
@@ -139,7 +134,6 @@ def train_and_valid(
     device_type = "cuda" if isinstance(rank, int) else "cpu"
 
     loss_accum = 0.0
-    val_freq_time_0 = time.time()
     for itrain, batch in iterator:
         batch = batch.to(rank, non_blocking=True)
 
@@ -190,52 +184,6 @@ def train_and_valid(
                     tensorboard_writer.flush()
                 loss_accum = 0.0
 
-        if val_freq is not None and is_train:
-            if itrain != 0 and itrain % val_freq == 0:
-                # time since last intermediate validation run
-                val_freq_time = torch.tensor(time.time() - val_freq_time_0, device=rank)
-
-                # compute intermediate training loss
-                intermediate_losses_t = {key: epoch_loss[key] for key in epoch_loss}
-                for loss_ in epoch_loss:
-                    # sum up the losses from all workers and dicide by
-                    intermediate_losses_t[loss_] = intermediate_losses_t[loss_].cpu().item() / itrain
-
-                # compute intermediate validation loss
-                intermediate_losses_v = train_and_valid(
-                    rank,
-                    outdir,
-                    model,
-                    optimizer,
-                    train_loader,
-                    valid_loader,
-                    is_train=False,
-                    epoch=epoch,
-                    dtype=dtype,
-                )
-                intermediate_metrics = dict(
-                    loss=intermediate_losses_t["Total"],
-                    reg_loss=intermediate_losses_t["Regression"],
-                    cls_loss=intermediate_losses_t["Classification"],
-                    charge_loss=intermediate_losses_t["Charge"],
-                    val_loss=intermediate_losses_v["Total"],
-                    val_reg_loss=intermediate_losses_v["Regression"],
-                    val_cls_loss=intermediate_losses_v["Classification"],
-                    val_charge_loss=intermediate_losses_v["Charge"],
-                    inside_epoch=epoch,
-                    step=(epoch - 1) * len(data_loader) + itrain,
-                    val_freq_time=val_freq_time.cpu().item(),
-                )
-                val_freq_log = os.path.join(outdir, "val_freq_log.csv")
-                if (rank == 0) or (rank == "cpu"):
-                    with open(val_freq_log, "a", newline="") as f:
-                        writer = csv.DictWriter(f, fieldnames=intermediate_metrics.keys())
-                        if os.stat(val_freq_log).st_size == 0:  # only write header if file is empty
-                            writer.writeheader()
-                        writer.writerow(intermediate_metrics)
-
-                val_freq_time_0 = time.time()  # reset intermediate validation spacing timer
-
     num_data = torch.tensor(len(data_loader), device=rank)
     # sum up the number of steps from all workers
 
@@ -259,7 +207,6 @@ def train_mlpf(
     dtype=torch.float32,
     lr_schedule=None,
     checkpoint_freq=None,
-    val_freq=None,
 ):
     """
     Will run a full training by calling train().
@@ -293,7 +240,6 @@ def train_mlpf(
 
         losses_t = train_and_valid(
             rank,
-            outdir,
             model,
             optimizer,
             train_loader=train_loader,
@@ -302,14 +248,12 @@ def train_mlpf(
             is_train=True,
             lr_schedule=lr_schedule,
             epoch=epoch,
-            val_freq=val_freq,
             dtype=dtype,
             tensorboard_writer=tensorboard_writer_train,
         )
 
         losses_v = train_and_valid(
             rank,
-            outdir,
             model,
             optimizer,
             train_loader=train_loader,
