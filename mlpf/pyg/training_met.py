@@ -117,6 +117,7 @@ def train_and_valid(
 
     # device_type = "cuda" if isinstance(rank, int) else "cpu"
 
+    loss = {}
     loss_accum = 0.0
     for itrain, batch in iterator:
 
@@ -161,7 +162,7 @@ def train_and_valid(
 
         true_met = torch.sqrt(torch.sum(gen_px, axis=1) ** 2 + torch.sum(gen_py, axis=1) ** 2).unsqueeze(-1)
 
-        loss = torch.nn.functional.huber_loss(cand_met + pred_met, true_met)
+        loss["MET"] = torch.nn.functional.huber_loss(cand_met + pred_met, true_met)
 
         if is_train:
             loss["MET"].backward()
@@ -193,6 +194,7 @@ def train_and_valid(
         # sum up the losses from all workers
         epoch_loss[loss_] = epoch_loss[loss_].cpu().item() / num_data.cpu().item()
 
+    print("epoch_loss", epoch_loss)
     return epoch_loss
 
 
