@@ -11,6 +11,7 @@ import logging
 from pathlib import Path
 
 import torch
+import tqdm
 import yaml
 from pyg.logger import _configLogger, _logger
 
@@ -66,7 +67,10 @@ parser.add_argument("--ntest", type=int, default=None, help="training samples to
 parser.add_argument("--nvalid", type=int, default=None, help="validation samples to use")
 parser.add_argument("--val-freq", type=int, default=None, help="run extra validation every val_freq training steps")
 parser.add_argument("--checkpoint-freq", type=int, default=None, help="epoch frequency for checkpointing")
-parser.add_argument("--local", action="store_true", default=None, help="perform HPO locally, without a Ray cluster")
+parser.add_argument("--in-memory", action="store_true", default=None, help="if True will load the data into memory first")
+parser.add_argument("--numtrain", action="store_true", default=10000, help="for quick training")
+parser.add_argument("--numvalid", action="store_true", default=1000, help="for quick validation")
+
 parser.add_argument(
     "--dtype",
     type=str,
@@ -85,12 +89,18 @@ parser.add_argument(
 import torch.nn as nn
 
 
-class DeepMET(nn.Module):
+class DeepMET2(nn.Module):
     def __init__(
         self,
         width=128,
     ):
-        super(DeepMET, self).__init__()
+        super(DeepMET2, self).__init__()
+
+        """
+        Takes as input the p4 of the MLPF/PF candidates; will run an encoder -> pooling -> decoder to learn
+        two outputs per event "w_x" and "w_y" which will enter the loss:
+            MET^2 = (w_x * (sum_pxi)^2) + (w_y * (sum_pyi)^2)
+        """
 
         self.act = nn.ELU
 
@@ -108,7 +118,7 @@ class DeepMET(nn.Module):
         self.nn_decoder = nn.Sequential(
             nn.Linear(width, width),
             self.act(),
-            nn.Linear(width, 1),
+            nn.Linear(width, 2),
         )
 
     # @torch.compile
@@ -116,10 +126,11 @@ class DeepMET(nn.Module):
 
         probX = self.nn_encoder(X)
 
-        encoded_element = probX.sum(axis=1)  # sum over particles
+        encoded_element = probX.sum(axis=1)  # pool over particles; recall ~ [Batch, Particles, Feature]
+
         MET = self.nn_decoder(encoded_element)
 
-        return MET
+        return MET[:, 0], MET[:, 1]
 
 
 def main():
@@ -199,7 +210,7 @@ def main():
 
     # model, optimizer = load_checkpoint(checkpoint, model, optimizer)
 
-    model = DeepMET()
+    model = DeepMET2()
     optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4)
     model_kwargs = {}
 
@@ -219,6 +230,21 @@ def main():
             pad_3d,
             use_ray=False,
         )
+
+        if args.in_memory:
+            train_loader = []
+            for i, batch in tqdm.tqdm(enumerate(loaders["train"])):
+                train_loader += [batch]
+                if i == args.numtrain:
+                    break
+            loaders["train"] = train_loader
+
+            valid_loader = []
+            for i, batch in tqdm.tqdm(enumerate(loaders["valid"])):
+                valid_loader += [batch]
+                if i == args.numvalid:
+                    break
+            loaders["valid"] = valid_loader
 
         train_mlpf(
             rank,

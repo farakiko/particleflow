@@ -74,8 +74,6 @@ def train_and_valid(
         enumerate(data_loader), total=len(data_loader), desc=f"Epoch {epoch} {train_or_valid} loop on rank={rank}"
     )
 
-    # device_type = "cuda" if isinstance(rank, int) else "cpu"
-
     loss = {}
     loss_accum = 0.0
     for itrain, batch in iterator:
@@ -87,46 +85,37 @@ def train_and_valid(
         num_elems = batch.X[batch.mask].shape[0]
         num_batch = batch.X.shape[0]
 
-        # with torch.autocast(device_type=device_type, dtype=dtype, enabled=device_type == "cuda"):
-        #     if is_train:
-        #         ypred = model(batch.X, batchidx_or_mask)
-        #     else:
-        #         with torch.no_grad():
-        #             ypred = model(batch.X, batchidx_or_mask)
-        # ypred = unpack_predictions(ypred)
-
-        # with torch.autocast(device_type=device_type, dtype=dtype, enabled=device_type == "cuda"):
-        #     if is_train:
-        #         loss = mlpf_loss(ygen, ypred, batchidx_or_mask)
-        #         for param in model.parameters():
-        #             param.grad = None
-        #     else:
-        #         with torch.no_grad():
-        #             loss = mlpf_loss(ygen, ypred, batchidx_or_mask)
-
-        # candmet idea
+        # DeepMET inference
         msk_ycand = ycand["cls_id"] != 0
         cand_px = (ycand["pt"] * ycand["cos_phi"]) * msk_ycand
         cand_py = (ycand["pt"] * ycand["sin_phi"]) * msk_ycand
-
-        cand_met = torch.sqrt(torch.sum(cand_px, axis=1) ** 2 + torch.sum(cand_py, axis=1) ** 2).unsqueeze(-1)
-
         p4_masked = ycand["momentum"] * msk_ycand.unsqueeze(-1)
-        pred_met = model(p4_masked)
+
+        if is_train:
+            wx, wy = model(p4_masked)
+        else:
+            with torch.no_grad():
+                wx, wy = model(p4_masked)
+
+        pred_met = (wx * (torch.sum(cand_px, axis=1) ** 2)) + (wy * (torch.sum(cand_py, axis=1) ** 2))
 
         # genMET
         msk_gen = ygen["cls_id"] != 0
         gen_px = (ygen["pt"] * ygen["cos_phi"]) * msk_gen
         gen_py = (ygen["pt"] * ygen["sin_phi"]) * msk_gen
 
-        true_met = torch.sqrt(torch.sum(gen_px, axis=1) ** 2 + torch.sum(gen_py, axis=1) ** 2).unsqueeze(-1)
-
-        loss["MET"] = torch.nn.functional.huber_loss(cand_met + pred_met, true_met)
+        true_met = (torch.sum(gen_px, axis=1) ** 2 + torch.sum(gen_py, axis=1) ** 2).unsqueeze(-1)
 
         if is_train:
+            loss["MET"] = torch.nn.functional.huber_loss(pred_met, true_met)
+            for param in model.parameters():
+                param.grad = None
             loss["MET"].backward()
             loss_accum += loss["MET"].detach().cpu().item()
             optimizer.step()
+        else:
+            with torch.no_grad():
+                loss["MET"] = torch.nn.functional.huber_loss(pred_met, true_met)
 
         for loss_ in loss.keys():
             if loss_ not in epoch_loss:
@@ -144,12 +133,9 @@ def train_and_valid(
                 loss_accum = 0.0
         # if itrain == 10:
         #     break
-    num_data = torch.tensor(len(data_loader), device=rank)
-    # sum up the number of steps from all workers
 
     for loss_ in epoch_loss:
-        # sum up the losses from all workers
-        epoch_loss[loss_] = epoch_loss[loss_].cpu().item() / num_data.cpu().item()
+        epoch_loss[loss_] = epoch_loss[loss_].cpu().item() / len(data_loader)
 
     return epoch_loss
 
