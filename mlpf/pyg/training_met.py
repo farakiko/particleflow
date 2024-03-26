@@ -104,7 +104,7 @@ def train_and_valid(
         gen_px = (ygen["pt"] * ygen["cos_phi"]) * msk_gen
         gen_py = (ygen["pt"] * ygen["sin_phi"]) * msk_gen
 
-        true_met = (torch.sum(gen_px, axis=1) ** 2 + torch.sum(gen_py, axis=1) ** 2).unsqueeze(-1)
+        true_met = torch.sum(gen_px, axis=1) ** 2 + torch.sum(gen_py, axis=1) ** 2
 
         if is_train:
             loss["MET"] = torch.nn.functional.huber_loss(pred_met, true_met)
