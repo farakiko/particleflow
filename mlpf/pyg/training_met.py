@@ -73,6 +73,7 @@ def train_and_valid(
     else:
         data_loader = valid_loader
 
+    print("LEN", len(data_loader))
     # only show progress bar on rank 0
     iterator = tqdm.tqdm(
         enumerate(data_loader), total=len(data_loader), desc=f"Epoch {epoch} {train_or_valid} loop on rank={rank}"
