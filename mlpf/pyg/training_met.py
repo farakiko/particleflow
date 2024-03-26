@@ -178,9 +178,9 @@ def train_and_valid(
 
                 val_freq_i += 1
 
-        # if not is_train:
-        # if itrain > 1000:
-        #     break
+        if not is_train:
+            if itrain > 300:
+                break
 
     for loss_ in epoch_loss:
         epoch_loss[loss_] = epoch_loss[loss_].cpu().item() / len(data_loader)
