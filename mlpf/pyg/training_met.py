@@ -135,8 +135,6 @@ def train_and_valid(
                 loss_accum = 0.0
 
         if val_freq is not None and is_train:
-            print("itrain", itrain)
-            print("val_freq", val_freq)
 
             if itrain != 0 and itrain % val_freq == 0:
                 # time since last intermediate validation run
@@ -189,7 +187,7 @@ def train_and_valid(
 
     for loss_ in epoch_loss:
         epoch_loss[loss_] = epoch_loss[loss_].cpu().item() / len(data_loader)
-    print(is_train, "epoch_loss", epoch_loss)
+
     return epoch_loss
 
 
