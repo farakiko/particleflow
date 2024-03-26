@@ -139,7 +139,6 @@ def train_and_valid(
             print("val_freq", val_freq)
 
             if itrain != 0 and itrain % val_freq == 0:
-                val_freq = (epoch - 1) * len(data_loader) + val_freq_step
                 # time since last intermediate validation run
                 val_freq_time = torch.tensor(time.time() - val_freq_time_0, device=rank)
                 # compute intermediate training loss
@@ -159,7 +158,7 @@ def train_and_valid(
                     is_train=False,
                     lr_schedule=None,
                     epoch=epoch,
-                    val_freq=val_freq,
+                    val_freq=None,
                     dtype=dtype,
                 )
                 print("intermediate_losses_v", intermediate_losses_v)
@@ -219,6 +218,9 @@ def train_mlpf(
         patience: number of stale epochs before stopping the training
         outdir: path to store the model weights and training plots
     """
+
+    global val_freq_step
+    val_freq_step = 0
 
     tensorboard_writer_train = SummaryWriter(f"{outdir}/runs/train")
     tensorboard_writer_valid = SummaryWriter(f"{outdir}/runs/valid")
