@@ -156,8 +156,11 @@ def train_and_valid(
                     optimizer,
                     train_loader,
                     valid_loader,
+                    trainable,
                     is_train=False,
+                    lr_schedule=None,
                     epoch=epoch,
+                    val_freq=None,
                     dtype=dtype,
                 )
                 intermediate_metrics = dict(
