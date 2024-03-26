@@ -81,6 +81,7 @@ def train_and_valid(
     loss = {}
     loss_accum = 0.0
     val_freq_time_0 = time.time()
+    val_freq_step = 0
     for itrain, batch in iterator:
 
         batch = batch.to(rank, non_blocking=True)
@@ -130,7 +131,7 @@ def train_and_valid(
         if is_train:
             step = (epoch - 1) * len(data_loader) + itrain
             if not (tensorboard_writer is None):
-                tensorboard_writer.add_scalar("step/loss", loss_accum / num_elems, step)
+                tensorboard_writer.add_scalar("step/loss_train", loss_accum / num_elems, step)
                 tensorboard_writer.add_scalar("step/num_elems", num_elems, step)
                 tensorboard_writer.add_scalar("step/num_batch", num_batch, step)
                 if itrain % 10 == 0:
@@ -138,6 +139,7 @@ def train_and_valid(
                 loss_accum = 0.0
 
         if val_freq is not None and is_train:
+            val_freq = (epoch - 1) * len(data_loader) + val_freq_step
             if itrain != 0 and itrain % val_freq == 0:
                 # time since last intermediate validation run
                 val_freq_time = torch.tensor(time.time() - val_freq_time_0, device=rank)
@@ -159,26 +161,25 @@ def train_and_valid(
                     dtype=dtype,
                 )
                 intermediate_metrics = dict(
-                    loss=intermediate_losses_t["Total"],
-                    reg_loss=intermediate_losses_t["Regression"],
-                    cls_loss=intermediate_losses_t["Classification"],
-                    charge_loss=intermediate_losses_t["Charge"],
-                    val_loss=intermediate_losses_v["Total"],
-                    val_reg_loss=intermediate_losses_v["Regression"],
-                    val_cls_loss=intermediate_losses_v["Classification"],
-                    val_charge_loss=intermediate_losses_v["Charge"],
+                    loss=intermediate_losses_t["MET"],
+                    val_loss=intermediate_losses_v["MET"],
                     inside_epoch=epoch,
                     step=(epoch - 1) * len(data_loader) + itrain,
                     val_freq_time=val_freq_time.cpu().item(),
                 )
                 val_freq_log = os.path.join(outdir, "val_freq_log.csv")
-                if (rank == 0) or (rank == "cpu"):
-                    with open(val_freq_log, "a", newline="") as f:
-                        writer = csv.DictWriter(f, fieldnames=intermediate_metrics.keys())
-                        if os.stat(val_freq_log).st_size == 0:  # only write header if file is empty
-                            writer.writeheader()
-                        writer.writerow(intermediate_metrics)
+                with open(val_freq_log, "a", newline="") as f:
+                    writer = csv.DictWriter(f, fieldnames=intermediate_metrics.keys())
+                    if os.stat(val_freq_log).st_size == 0:  # only write header if file is empty
+                        writer.writeheader()
+                    writer.writerow(intermediate_metrics)
                 val_freq_time_0 = time.time()  # reset intermediate validation spacing timer
+
+                step = (epoch - 1) * len(data_loader) + itrain
+                if not (tensorboard_writer is None):
+                    tensorboard_writer.add_scalar("step/loss_intermediate_t", intermediate_losses_t["MET"], val_freq_step)
+                    tensorboard_writer.add_scalar("step/loss_intermediate_v", intermediate_losses_v["MET"], val_freq_step)
+            val_freq_step += 1
 
     for loss_ in epoch_loss:
         epoch_loss[loss_] = epoch_loss[loss_].cpu().item() / len(data_loader)
