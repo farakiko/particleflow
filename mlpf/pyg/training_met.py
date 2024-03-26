@@ -178,6 +178,15 @@ def train_and_valid(
 
                 val_freq_i += 1
 
+                # save checkpoint every validation step
+                extra_state = {"epoch": epoch}
+                checkpoint_dir = Path(outdir) / "checkpoints_val_freq"
+                checkpoint_dir.mkdir(exist_ok=True)
+                checkpoint_path = "{}/checkpoint-{:02d}-{:.6f}.pth".format(
+                    checkpoint_dir, val_freq_step, intermediate_losses_v["MET"]
+                )
+                save_checkpoint(checkpoint_path, model, optimizer, extra_state)
+
         if not is_train:
             if itrain > 300:
                 break
