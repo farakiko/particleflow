@@ -10,7 +10,7 @@ import torch
 import tqdm
 import yaml
 from pyg.PFDataset import get_interleaved_dataloaders
-from pyg.training import override_config
+from pyg.training_met import override_config
 
 parser = argparse.ArgumentParser()
 parser.add_argument(
@@ -71,5 +71,5 @@ def main():
 
 
 if __name__ == "__main__":
-    # python clic_data.py --dataset clic --data_dir tensorflow_datasets --num-workers 4 --prefetch_factor 20
+    # python mlpf/clic_data.py --dataset clic --data_dir tensorflow_datasets --num-workers 4 --prefetch_factor 20
     main()
