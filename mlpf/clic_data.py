@@ -54,6 +54,20 @@ parser.add_argument("--checkpoint-freq", type=int, default=None, help="epoch fre
 parser.add_argument("--in-memory", action="store_true", default=None, help="if True will load the data into memory first")
 parser.add_argument("--numtrain", type=int, default=10000, help="training samples to use")
 parser.add_argument("--numvalid", type=int, default=1000, help="validation samples to use")
+parser.add_argument(
+    "--dtype",
+    type=str,
+    default=None,
+    help="data type for training",
+    choices=["float32", "float16", "bfloat16"],
+)
+parser.add_argument(
+    "--attention-type",
+    type=str,
+    default=None,
+    help="attention type for self-attention layer",
+    choices=["math", "efficient", "flash", "flash_external"],
+)
 
 
 def main():
