@@ -92,6 +92,7 @@ def main():
         use_ray=False,
     )
 
+    # TRAIN
     j = 0
     train_loader = []
     print(f"train_loader: {len(loaders['train'])}")
@@ -103,6 +104,12 @@ def main():
             j += 1
             train_loader = []
 
+    # the last one
+    j += 1
+    torch.save(train_loader, f"/pfvol/torchdata/train/train_list_{j}.pt")
+    print(f"saved /pfvol/torchdata/train/train_list_{j}.pt")
+
+    # VALID
     j = 0
     valid_loader = []
     print(f"valid_loader: {len(loaders['valid'])}")
@@ -113,6 +120,11 @@ def main():
             print(f"saved /pfvol/torchdata/valid/valid_list_{j}.pt")
             j += 1
             valid_loader = []
+
+    # the last one
+    j += 1
+    torch.save(valid_loader, f"/pfvol/torchdata/valid/valid_list_{j}.pt")
+    print(f"saved /pfvol/torchdata/valid/valid_list_{j}.pt")
 
 
 if __name__ == "__main__":
