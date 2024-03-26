@@ -139,8 +139,8 @@ def train_and_valid(
                 loss_accum = 0.0
 
         if val_freq is not None and is_train:
-            val_freq = (epoch - 1) * len(data_loader) + val_freq_step
-            if itrain != 0 and itrain % val_freq == 0:
+            if itrain != 0 and itrain % val_freq == 2:
+                val_freq = (epoch - 1) * len(data_loader) + val_freq_step
                 # time since last intermediate validation run
                 val_freq_time = torch.tensor(time.time() - val_freq_time_0, device=rank)
                 # compute intermediate training loss
@@ -182,7 +182,7 @@ def train_and_valid(
                 if not (tensorboard_writer is None):
                     tensorboard_writer.add_scalar("step/loss_intermediate_t", intermediate_losses_t["MET"], val_freq_step)
                     tensorboard_writer.add_scalar("step/loss_intermediate_v", intermediate_losses_v["MET"], val_freq_step)
-            val_freq_step += 1
+                val_freq_step += 1
 
     for loss_ in epoch_loss:
         epoch_loss[loss_] = epoch_loss[loss_].cpu().item() / len(data_loader)
