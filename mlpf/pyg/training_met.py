@@ -135,6 +135,9 @@ def train_and_valid(
                 loss_accum = 0.0
 
         if val_freq is not None and is_train:
+            print("itrain", itrain)
+            print("val_freq", val_freq)
+
             if itrain != 0 and itrain % val_freq == 0:
                 val_freq = (epoch - 1) * len(data_loader) + val_freq_step
                 # time since last intermediate validation run
