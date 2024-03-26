@@ -92,22 +92,26 @@ def main():
         use_ray=False,
     )
 
+    j = 0
     train_loader = []
     print(f"train_loader: {len(loaders['train'])}")
     for i, batch in tqdm.tqdm(enumerate(loaders["train"])):
         train_loader += [batch]
-        if i % 300 == 0:  # every 300 batches will save to disk
-            torch.save(train_loader, f"/pfvol/torchdata/train/train_list_{i}.pt")
-            print(f"saved /pfvol/torchdata/train/train_list_{i}.pt")
+        if (i % 300 == 0) and (i != 0):  # every 300 batches will save to disk
+            torch.save(train_loader, f"/pfvol/torchdata/train/train_list_{j}.pt")
+            print(f"saved /pfvol/torchdata/train/train_list_{j}.pt")
+            j += 1
             train_loader = []
 
+    j = 0
     valid_loader = []
     print(f"valid_loader: {len(loaders['valid'])}")
     for i, batch in tqdm.tqdm(enumerate(loaders["valid"])):
         valid_loader += [batch]
-        if i % 300 == 0:  # every 300 batches will save to disk
-            torch.save(valid_loader, f"/pfvol/torchdata/valid/valid_list_{i}.pt")
-            print(f"saved /pfvol/torchdata/valid/valid_list_{i}.pt")
+        if (i % 300 == 0) and (i != 0):  # every 300 batches will save to disk
+            torch.save(valid_loader, f"/pfvol/torchdata/valid/valid_list_{j}.pt")
+            print(f"saved /pfvol/torchdata/valid/valid_list_{j}.pt")
+            j += 1
             valid_loader = []
 
 
