@@ -182,7 +182,7 @@ def train_and_valid(
 
     for loss_ in epoch_loss:
         epoch_loss[loss_] = epoch_loss[loss_].cpu().item() / len(data_loader)
-
+    print(is_train, "epoch_loss", epoch_loss)
     return epoch_loss
 
 
