@@ -74,7 +74,6 @@ def train_and_valid(
     else:
         data_loader = valid_loader
 
-    print("LEN", len(data_loader))
     # only show progress bar on rank 0
     iterator = tqdm.tqdm(
         enumerate(data_loader), total=len(data_loader), desc=f"Epoch {epoch} {train_or_valid} loop on rank={rank}"
@@ -180,8 +179,8 @@ def train_and_valid(
                 val_freq_i += 1
 
         # if not is_train:
-        if itrain > 1000:
-            break
+        # if itrain > 1000:
+        #     break
 
     for loss_ in epoch_loss:
         epoch_loss[loss_] = epoch_loss[loss_].cpu().item() / len(data_loader)
