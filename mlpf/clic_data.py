@@ -92,25 +92,25 @@ def main():
         use_ray=False,
     )
 
-    j = 0
     train_loader = []
+    print(f"train_loader: {len(loaders['train'])}")
     for i, batch in tqdm.tqdm(enumerate(loaders["train"])):
         train_loader += [batch]
         if i % 300 == 0:  # every 300 batches will save to disk
-            torch.save(train_loader, f"/pfvol/torchdata/train/train_list_{j}.pt")
-            j += 1
+            torch.save(train_loader, f"/pfvol/torchdata/train/train_list_{i}.pt")
+            print(f"saved /pfvol/torchdata/train/train_list_{i}.pt")
             train_loader = []
 
-    j = 0
     valid_loader = []
+    print(f"valid_loader: {len(loaders['valid'])}")
     for i, batch in tqdm.tqdm(enumerate(loaders["valid"])):
         valid_loader += [batch]
         if i % 300 == 0:  # every 300 batches will save to disk
-            torch.save(valid_loader, f"/pfvol/torchdata/valid/valid_list_{j}.pt")
-            j += 1
+            torch.save(valid_loader, f"/pfvol/torchdata/valid/valid_list_{i}.pt")
+            print(f"saved /pfvol/torchdata/valid/valid_list_{i}.pt")
             valid_loader = []
 
 
 if __name__ == "__main__":
-    # noqa: python mlpf/clic_data.py --dataset clic --data-dir tensorflow_datasets --config parameters/pytorch/pyg-clic.yaml --num-workers 4 --prefetch-factor 20 --gpu-batch-multiplier 1000
+    # noqa: python mlpf/clic_data.py --dataset clic --data-dir tensorflow_datasets --config parameters/pytorch/pyg-clic.yaml --num-workers 4 --prefetch-factor 20 --gpu-batch-multiplier 100
     main()
