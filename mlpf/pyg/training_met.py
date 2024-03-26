@@ -52,6 +52,7 @@ def train_and_valid(
     lr_schedule=None,
     epoch=None,
     val_freq=None,
+    val_freq_i=0,
     dtype=torch.float32,
     tensorboard_writer=None,
 ):
@@ -81,8 +82,6 @@ def train_and_valid(
 
     loss = {}
     loss_accum = 0.0
-    val_freq_time_0 = time.time()
-    val_freq_step = 0
     for itrain, batch in iterator:
 
         batch = batch.to(rank, non_blocking=True)
@@ -137,8 +136,9 @@ def train_and_valid(
         if val_freq is not None and is_train:
 
             if itrain != 0 and itrain % val_freq == 0:
-                # time since last intermediate validation run
-                val_freq_time = torch.tensor(time.time() - val_freq_time_0, device=rank)
+
+                val_freq_step = (epoch - 1) * len(data_loader) + val_freq_i
+
                 # compute intermediate training loss
                 intermediate_losses_t = {key: epoch_loss[key] for key in epoch_loss}
                 for loss_ in epoch_loss:
@@ -159,13 +159,12 @@ def train_and_valid(
                     val_freq=None,
                     dtype=dtype,
                 )
-                print("intermediate_losses_v", intermediate_losses_v)
+
                 intermediate_metrics = dict(
                     loss=intermediate_losses_t["MET"],
                     val_loss=intermediate_losses_v["MET"],
                     inside_epoch=epoch,
                     step=(epoch - 1) * len(data_loader) + itrain,
-                    val_freq_time=val_freq_time.cpu().item(),
                 )
                 val_freq_log = os.path.join(outdir, "val_freq_log.csv")
                 with open(val_freq_log, "a", newline="") as f:
@@ -173,13 +172,12 @@ def train_and_valid(
                     if os.stat(val_freq_log).st_size == 0:  # only write header if file is empty
                         writer.writeheader()
                     writer.writerow(intermediate_metrics)
-                val_freq_time_0 = time.time()  # reset intermediate validation spacing timer
 
-                step = (epoch - 1) * len(data_loader) + itrain
                 if not (tensorboard_writer is None):
                     tensorboard_writer.add_scalar("step/loss_intermediate_t", intermediate_losses_t["MET"], val_freq_step)
                     tensorboard_writer.add_scalar("step/loss_intermediate_v", intermediate_losses_v["MET"], val_freq_step)
-                val_freq_step += 1
+
+                val_freq_i += 1
 
         # if not is_train:
         if itrain > 10:
@@ -250,6 +248,7 @@ def train_mlpf(
             epoch=epoch,
             dtype=dtype,
             val_freq=val_freq,
+            val_freq_i=0,
             tensorboard_writer=tensorboard_writer_train,
         )
 
@@ -264,6 +263,7 @@ def train_mlpf(
             is_train=False,
             epoch=epoch,
             val_freq=val_freq,
+            val_freq_i=0,
             dtype=dtype,
         )
 
