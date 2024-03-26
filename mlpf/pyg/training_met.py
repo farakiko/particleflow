@@ -180,7 +180,7 @@ def train_and_valid(
                 val_freq_i += 1
 
         # if not is_train:
-        if itrain > 10:
+        if itrain > 1000:
             break
 
     for loss_ in epoch_loss:
