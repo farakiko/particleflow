@@ -258,6 +258,7 @@ def main():
             trainable=config["model"]["trainable"],
             dtype=dtype,
             checkpoint_freq=config["checkpoint_freq"],
+            val_freq=config["val_freq"],
         )
 
 

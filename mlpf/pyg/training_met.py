@@ -1,3 +1,5 @@
+import csv
+import os
 import pickle as pkl
 import time
 from pathlib import Path
@@ -40,6 +42,7 @@ def configure_model_trainable(model, trainable, is_training):
 
 def train_and_valid(
     rank,
+    outdir,
     model,
     optimizer,
     train_loader,
@@ -48,6 +51,7 @@ def train_and_valid(
     is_train=True,
     lr_schedule=None,
     epoch=None,
+    val_freq=None,
     dtype=torch.float32,
     tensorboard_writer=None,
 ):
@@ -55,7 +59,7 @@ def train_and_valid(
     configure_model_trainable(model, trainable, is_train)
 
     """
-    Performs training over a given epoch. Will run a validation step every N_STEPS and after the last training batch.
+    Performs training over a given epoch. Will run a validation step every val_freq.
     """
 
     train_or_valid = "train" if is_train else "valid"
@@ -76,6 +80,7 @@ def train_and_valid(
 
     loss = {}
     loss_accum = 0.0
+    val_freq_time_0 = time.time()
     for itrain, batch in iterator:
 
         batch = batch.to(rank, non_blocking=True)
@@ -131,8 +136,49 @@ def train_and_valid(
                 if itrain % 10 == 0:
                     tensorboard_writer.flush()
                 loss_accum = 0.0
-        # if itrain == 10:
-        #     break
+
+        if val_freq is not None and is_train:
+            if itrain != 0 and itrain % val_freq == 0:
+                # time since last intermediate validation run
+                val_freq_time = torch.tensor(time.time() - val_freq_time_0, device=rank)
+                # compute intermediate training loss
+                intermediate_losses_t = {key: epoch_loss[key] for key in epoch_loss}
+                for loss_ in epoch_loss:
+                    intermediate_losses_t[loss_] = intermediate_losses_t[loss_].cpu().item() / itrain
+
+                # compute intermediate validation loss
+                intermediate_losses_v = train_and_valid(
+                    rank,
+                    outdir,
+                    model,
+                    optimizer,
+                    train_loader,
+                    valid_loader,
+                    is_train=False,
+                    epoch=epoch,
+                    dtype=dtype,
+                )
+                intermediate_metrics = dict(
+                    loss=intermediate_losses_t["Total"],
+                    reg_loss=intermediate_losses_t["Regression"],
+                    cls_loss=intermediate_losses_t["Classification"],
+                    charge_loss=intermediate_losses_t["Charge"],
+                    val_loss=intermediate_losses_v["Total"],
+                    val_reg_loss=intermediate_losses_v["Regression"],
+                    val_cls_loss=intermediate_losses_v["Classification"],
+                    val_charge_loss=intermediate_losses_v["Charge"],
+                    inside_epoch=epoch,
+                    step=(epoch - 1) * len(data_loader) + itrain,
+                    val_freq_time=val_freq_time.cpu().item(),
+                )
+                val_freq_log = os.path.join(outdir, "val_freq_log.csv")
+                if (rank == 0) or (rank == "cpu"):
+                    with open(val_freq_log, "a", newline="") as f:
+                        writer = csv.DictWriter(f, fieldnames=intermediate_metrics.keys())
+                        if os.stat(val_freq_log).st_size == 0:  # only write header if file is empty
+                            writer.writeheader()
+                        writer.writerow(intermediate_metrics)
+                val_freq_time_0 = time.time()  # reset intermediate validation spacing timer
 
     for loss_ in epoch_loss:
         epoch_loss[loss_] = epoch_loss[loss_].cpu().item() / len(data_loader)
@@ -152,6 +198,7 @@ def train_mlpf(
     trainable="all",
     dtype=torch.float32,
     checkpoint_freq=None,
+    val_freq=None,
 ):
     """
     Will run a full training by calling train().
@@ -185,6 +232,7 @@ def train_mlpf(
 
         losses_t = train_and_valid(
             rank,
+            outdir,
             model,
             optimizer,
             train_loader=train_loader,
@@ -193,11 +241,13 @@ def train_mlpf(
             is_train=True,
             epoch=epoch,
             dtype=dtype,
+            val_freq=val_freq,
             tensorboard_writer=tensorboard_writer_train,
         )
 
         losses_v = train_and_valid(
             rank,
+            outdir,
             model,
             optimizer,
             train_loader=train_loader,
@@ -205,6 +255,7 @@ def train_mlpf(
             trainable=trainable,
             is_train=False,
             epoch=epoch,
+            val_freq=val_freq,
             dtype=dtype,
         )
 
