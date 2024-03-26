@@ -181,9 +181,9 @@ def train_and_valid(
                     tensorboard_writer.add_scalar("step/loss_intermediate_v", intermediate_losses_v["MET"], val_freq_step)
                 val_freq_step += 1
 
-        if not is_train:
-            if itrain > 10:
-                break
+        # if not is_train:
+        if itrain > 10:
+            break
 
     for loss_ in epoch_loss:
         epoch_loss[loss_] = epoch_loss[loss_].cpu().item() / len(data_loader)
