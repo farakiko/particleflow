@@ -159,7 +159,7 @@ def train_and_valid(
                     is_train=False,
                     lr_schedule=None,
                     epoch=epoch,
-                    val_freq=None,
+                    val_freq=val_freq,
                     dtype=dtype,
                 )
                 print("intermediate_losses_v", intermediate_losses_v)
