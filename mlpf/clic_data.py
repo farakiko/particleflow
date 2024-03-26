@@ -13,6 +13,7 @@ from pyg.PFDataset import get_interleaved_dataloaders
 from pyg.training_met import override_config
 
 parser = argparse.ArgumentParser()
+parser.add_argument("--config", type=str, default=None, help="yaml config")
 parser.add_argument(
     "--dataset",
     type=str,
@@ -71,5 +72,5 @@ def main():
 
 
 if __name__ == "__main__":
-    # python mlpf/clic_data.py --dataset clic --data_dir tensorflow_datasets --num-workers 4 --prefetch_factor 20
+    # noqa: python mlpf/clic_data.py --dataset clic --data-dir tensorflow_datasets --config parameters/pytorch/pyg-clic.yaml --num-workers 4 --prefetch-factor 20
     main()
