@@ -88,9 +88,6 @@ def train_and_valid(
         ygen = unpack_target(batch.ygen)
         ycand = unpack_target(batch.ycand)
 
-        num_elems = batch.X[batch.mask].shape[0]
-        num_batch = batch.X.shape[0]
-
         # DeepMET inference
         msk_ycand = ycand["cls_id"] != 0
         cand_px = (ycand["pt"] * ycand["cos_phi"]) * msk_ycand
@@ -131,9 +128,7 @@ def train_and_valid(
         if is_train:
             step = (epoch - 1) * len(data_loader) + itrain
             if not (tensorboard_writer is None):
-                tensorboard_writer.add_scalar("step/loss_train", loss_accum / num_elems, step)
-                tensorboard_writer.add_scalar("step/num_elems", num_elems, step)
-                tensorboard_writer.add_scalar("step/num_batch", num_batch, step)
+                tensorboard_writer.add_scalar("step/loss_train", loss_accum, step)
                 if itrain % 10 == 0:
                     tensorboard_writer.flush()
                 loss_accum = 0.0
@@ -163,6 +158,7 @@ def train_and_valid(
                     val_freq=None,
                     dtype=dtype,
                 )
+                print("intermediate_losses_v", intermediate_losses_v)
                 intermediate_metrics = dict(
                     loss=intermediate_losses_t["MET"],
                     val_loss=intermediate_losses_v["MET"],
