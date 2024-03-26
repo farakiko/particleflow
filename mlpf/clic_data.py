@@ -97,7 +97,7 @@ def main():
     for i, batch in tqdm.tqdm(enumerate(loaders["train"])):
         train_loader += [batch]
         if i % 300 == 0:  # every 300 batches will save to disk
-            torch.save(train_loader, f"/pfvol/torchdata/train/train_list_{j}")
+            torch.save(train_loader, f"/pfvol/torchdata/train/train_list_{j}.pt")
             j += 1
             train_loader = []
 
@@ -106,11 +106,11 @@ def main():
     for i, batch in tqdm.tqdm(enumerate(loaders["valid"])):
         valid_loader += [batch]
         if i % 300 == 0:  # every 300 batches will save to disk
-            torch.save(valid_loader, f"/pfvol/torchdata/valid/valid_list_{j}")
+            torch.save(valid_loader, f"/pfvol/torchdata/valid/valid_list_{j}.pt")
             j += 1
             valid_loader = []
 
 
 if __name__ == "__main__":
-    # noqa: python mlpf/clic_data.py --dataset clic --data-dir tensorflow_datasets --config parameters/pytorch/pyg-clic.yaml --num-workers 4 --prefetch-factor 20
+    # noqa: python mlpf/clic_data.py --dataset clic --data-dir tensorflow_datasets --config parameters/pytorch/pyg-clic.yaml --num-workers 4 --prefetch-factor 20 --gpu-batch-multiplier 1000
     main()
