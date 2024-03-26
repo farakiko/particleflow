@@ -28,6 +28,13 @@ parser.add_argument("--prefetch-factor", type=int, default=None, help="number of
 parser.add_argument(
     "--gpu-batch-multiplier", type=int, default=None, help="Increase batch size per GPU by this constant factor"
 )
+parser.add_argument(
+    "--attention-type",
+    type=str,
+    default=None,
+    help="attention type for self-attention layer",
+    choices=["math", "efficient", "flash", "flash_external"],
+)
 
 
 def main():
