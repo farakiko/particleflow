@@ -68,8 +68,8 @@ parser.add_argument("--nvalid", type=int, default=None, help="validation samples
 parser.add_argument("--val-freq", type=int, default=None, help="run extra validation every val_freq training steps")
 parser.add_argument("--checkpoint-freq", type=int, default=None, help="epoch frequency for checkpointing")
 parser.add_argument("--in-memory", action="store_true", default=None, help="if True will load the data into memory first")
-parser.add_argument("--numtrain", action="store_true", default=10000, help="for quick training")
-parser.add_argument("--numvalid", action="store_true", default=1000, help="for quick validation")
+parser.add_argument("--numtrain", type=int, default=10000, help="training samples to use")
+parser.add_argument("--numvalid", type=int, default=1000, help="validation samples to use")
 
 parser.add_argument(
     "--dtype",
@@ -264,7 +264,7 @@ def main():
 if __name__ == "__main__":
 
     # e.g.
-    # noqa: python mlpf/met_finetuning_pipeline.py --dataset clic --data-dir tensorflow_datasets --config parameters/pytorch/pyg-clic.yaml --gpus 1 --prefix MLPF_test1_ --num-epochs 10 --train --attention-type efficient --dtype bfloat16 --num-workers 2 --prefetch-factor 2 --load /pfvol/experiments/MLPF_clic_A100_1gpu_pyg-clic_20240322_233518_004447/best_weights.pth --gpu-batch-multiplier 5
+    # noqa: python mlpf/met_finetuning_pipeline.py --dataset clic --data-dir tensorflow_datasets --config parameters/pytorch/pyg-clic.yaml --gpus 1 --prefix MLPF_test1_ --num-epochs 10 --train --attention-type efficient --dtype bfloat16 --num-workers 2 --prefetch-factor 2 --load /pfvol/experiments/MLPF_clic_A100_1gpu_pyg-clic_20240322_233518_004447/best_weights.pth --gpu-batch-multiplier 100 --in-memory
     # git checkout 8d9065cba1af49b97c63c4701789a7f7a1fbcd47 /home/jovyan/particleflow/mlpf/pyg/mlpf.py
     # git checkout 8d9065cba1af49b97c63c4701789a7f7a1fbcd47 /home/jovyan/particleflow/mlpf/pyg/utils.py
     main()
