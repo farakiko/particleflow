@@ -55,7 +55,7 @@ def train_and_valid(
     lr_schedule=None,
     epoch=None,
     val_freq=None,
-    val_freq_i=0,
+    val_freq_step=0,
     dtype=torch.float32,
     tensorboard_writer=None,
 ):
@@ -155,15 +155,13 @@ def train_and_valid(
 
             if itrain != 0 and itrain % val_freq == 0:
 
-                val_freq_step = (epoch - 1) * len(data_loader) + val_freq_i
-
                 # compute intermediate training loss
                 intermediate_losses_t = {key: epoch_loss[key] for key in epoch_loss}
                 for loss_ in epoch_loss:
                     intermediate_losses_t[loss_] = intermediate_losses_t[loss_].cpu().item() / itrain
 
                 # compute intermediate validation loss
-                intermediate_losses_v = train_and_valid(
+                intermediate_losses_v, _ = train_and_valid(
                     rank,
                     outdir,
                     deepmet,
@@ -176,7 +174,7 @@ def train_and_valid(
                     is_train=False,
                     lr_schedule=None,
                     epoch=epoch,
-                    val_freq=None,
+                    val_freq_step=None,
                     dtype=dtype,
                 )
 
@@ -184,7 +182,7 @@ def train_and_valid(
                     loss=intermediate_losses_t["MET"],
                     val_loss=intermediate_losses_v["MET"],
                     inside_epoch=epoch,
-                    step=(epoch - 1) * len(data_loader) + itrain,
+                    step=val_freq_step,
                 )
                 val_freq_log = os.path.join(outdir, "val_freq_log.csv")
                 with open(val_freq_log, "a", newline="") as f:
@@ -197,7 +195,7 @@ def train_and_valid(
                     tensorboard_writer.add_scalar("step/loss_intermediate_t", intermediate_losses_t["MET"], val_freq_step)
                     tensorboard_writer.add_scalar("step/loss_intermediate_v", intermediate_losses_v["MET"], val_freq_step)
 
-                val_freq_i += 1
+                val_freq_step += 1
 
                 # save checkpoint every validation step
                 extra_state = {"epoch": epoch}
@@ -221,7 +219,7 @@ def train_and_valid(
         for loss_ in epoch_loss:
             epoch_loss[loss_] = epoch_loss[loss_].cpu().item() / len(data_loader)
 
-    return epoch_loss
+    return epoch_loss, val_freq_step
 
 
 def train_mlpf(
@@ -270,10 +268,11 @@ def train_mlpf(
     stale_epochs, best_val_loss = torch.tensor(0, device=rank), float("inf")
 
     start_epoch = 1
+    val_freq_step = 0
     for epoch in range(start_epoch, num_epochs + 1):
         t0 = time.time()
 
-        losses_t = train_and_valid(
+        losses_t, val_freq_step = train_and_valid(
             rank,
             outdir,
             deepmet,
@@ -287,11 +286,11 @@ def train_mlpf(
             epoch=epoch,
             dtype=dtype,
             val_freq=val_freq,
-            val_freq_i=0,
+            val_freq_step=val_freq_step,
             tensorboard_writer=tensorboard_writer_train,
         )
 
-        losses_v = train_and_valid(
+        losses_v, _ = train_and_valid(
             rank,
             outdir,
             deepmet,
@@ -304,7 +303,7 @@ def train_mlpf(
             is_train=False,
             epoch=epoch,
             val_freq=val_freq,
-            val_freq_i=0,
+            val_freq_step=None,
             dtype=dtype,
         )
 
