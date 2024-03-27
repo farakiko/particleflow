@@ -256,6 +256,8 @@ def main():
         mlpf = load_checkpoint(checkpoint, mlpf)
         mlpf.eval()
 
+        _logger.info(mlpf)
+
     # define the deepmet model
     if args.which_deepmet == "1":
         _logger.info("Will use DeepMET model #1 (without pooling)", color="orange")
@@ -265,8 +267,10 @@ def main():
         _logger.info("Will use DeepMET model #2 (with pooling)", color="orange")
 
         deepmet = DeepMET2().to(torch.device(rank))
+
     deepmet.train()
     optimizer = torch.optim.AdamW(deepmet.parameters(), lr=1e-4)
+    _logger.info(deepmet)
 
     if args.train:
         save_HPs(args, deepmet, mlpf_kwargs, outdir)  # save model_kwargs and hyperparameters
