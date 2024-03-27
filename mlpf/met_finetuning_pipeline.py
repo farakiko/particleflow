@@ -242,6 +242,8 @@ def main():
         mlpf_kwargs = {}
 
     else:
+        _logger.info("Will use the MLPF cands", color="bold")
+
         with open(f"{loaddir}/model_kwargs.pkl", "rb") as f:
             mlpf_kwargs = pkl.load(f)
         _logger.info("mlpf_kwargs: {}".format(mlpf_kwargs))
@@ -258,8 +260,10 @@ def main():
 
     # define the deepmet model
     if args.which_deepmet == "1":
+        _logger.info("Will use DeepMET model #1 (without pooling)", color="bold")
         deepmet = DeepMET1().to(torch.device(rank))
     else:
+        _logger.info("Will use DeepMET model #2 (with pooling)", color="bold")
         deepmet = DeepMET2().to(torch.device(rank))
     deepmet.train()
     optimizer = torch.optim.AdamW(deepmet.parameters(), lr=1e-4)
