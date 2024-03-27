@@ -274,7 +274,7 @@ def main():
         deepmet = DeepMET2().to(torch.device(rank))
 
     deepmet.train()
-    optimizer = torch.optim.AdamW(deepmet.parameters(), lr=1e-4)
+    optimizer = torch.optim.AdamW(deepmet.parameters(), lr=args.lr)
     _logger.info(deepmet)
 
     if args.train:

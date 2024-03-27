@@ -116,19 +116,29 @@ def train_and_valid(
                 wx, wy = deepmet(p4_masked)
 
         if which_deepmet == "1":
-            pred_met = (torch.sum(wx * cand_px, axis=1) ** 2) + (torch.sum(wy * cand_py, axis=1) ** 2)
+            # pred_met = (torch.sum(wx * cand_px, axis=1) ** 2) + (torch.sum(wy * cand_py, axis=1) ** 2)
+            pred_met_x = torch.sum(wx * cand_px, axis=1)
+            pred_met_y = torch.sum(wy * cand_py, axis=1)
         else:
-            pred_met = (wx * (torch.sum(cand_px, axis=1) ** 2)) + (wy * (torch.sum(cand_py, axis=1) ** 2))
+            # pred_met = (wx * (torch.sum(cand_px, axis=1) ** 2)) + (wy * (torch.sum(cand_py, axis=1) ** 2))
+            pred_met_x = wx * torch.sum(cand_px, axis=1)
+            pred_met_y = wy * torch.sum(cand_py, axis=1)
 
         # genMET to compute the loss
         msk_gen = ygen["cls_id"] != 0
         gen_px = (ygen["pt"] * ygen["cos_phi"]) * msk_gen
         gen_py = (ygen["pt"] * ygen["sin_phi"]) * msk_gen
 
-        true_met = torch.sum(gen_px, axis=1) ** 2 + torch.sum(gen_py, axis=1) ** 2
+        # true_met = torch.sum(gen_px, axis=1) ** 2 + torch.sum(gen_py, axis=1) ** 2
+        true_met_x = torch.sum(gen_px, axis=1)
+        true_met_y = torch.sum(gen_py, axis=1)
 
         if is_train:
-            loss["MET"] = torch.nn.functional.huber_loss(pred_met, true_met)
+            # loss["MET"] = torch.nn.functional.huber_loss(pred_met, true_met)
+            loss["MET"] = torch.nn.functional.huber_loss(true_met_x, pred_met_x) + torch.nn.functional.huber_loss(
+                true_met_y, pred_met_y
+            )
+
             for param in deepmet.parameters():
                 param.grad = None
             loss["MET"].backward()
@@ -136,7 +146,10 @@ def train_and_valid(
             optimizer.step()
         else:
             with torch.no_grad():
-                loss["MET"] = torch.nn.functional.huber_loss(pred_met, true_met)
+                # loss["MET"] = torch.nn.functional.huber_loss(pred_met, true_met)
+                loss["MET"] = torch.nn.functional.huber_loss(true_met_x, pred_met_x) + torch.nn.functional.huber_loss(
+                    true_met_y, pred_met_y
+                )
 
         for loss_ in loss.keys():
             if loss_ not in epoch_loss:
