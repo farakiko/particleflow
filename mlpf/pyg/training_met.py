@@ -12,9 +12,10 @@ import tqdm
 from pyg.logger import _logger
 
 # from pyg.training import FocalLoss
-from pyg.utils import (  # unpack_predictions,
+from pyg.utils import (
     get_model_state_dict,
     save_checkpoint,
+    unpack_predictions,
     unpack_target,
 )
 from torch.utils.tensorboard import SummaryWriter
@@ -43,7 +44,9 @@ def configure_model_trainable(model, trainable, is_training):
 def train_and_valid(
     rank,
     outdir,
-    model,
+    deepmet,
+    which_deepmet,
+    mlpf,
     optimizer,
     train_loader,
     valid_loader,
@@ -57,7 +60,7 @@ def train_and_valid(
     tensorboard_writer=None,
 ):
 
-    configure_model_trainable(model, trainable, is_train)
+    configure_model_trainable(deepmet, trainable, is_train)
 
     """
     Performs training over a given epoch. Will run a validation step every val_freq.
@@ -87,21 +90,37 @@ def train_and_valid(
         ygen = unpack_target(batch.ygen)
         ycand = unpack_target(batch.ycand)
 
-        # DeepMET inference
-        msk_ycand = ycand["cls_id"] != 0
-        cand_px = (ycand["pt"] * ycand["cos_phi"]) * msk_ycand
-        cand_py = (ycand["pt"] * ycand["sin_phi"]) * msk_ycand
-        p4_masked = ycand["momentum"] * msk_ycand.unsqueeze(-1)
+        # first check if MLPF inference must be done
+        if mlpf == {}:  # use PF-cands
+            msk_ycand = ycand["cls_id"] != 0
+            cand_px = (ycand["pt"] * ycand["cos_phi"]) * msk_ycand
+            cand_py = (ycand["pt"] * ycand["sin_phi"]) * msk_ycand
+            p4_masked = ycand["momentum"] * msk_ycand.unsqueeze(-1)
 
+        else:  # run the MLPF inference to get the MLPF cands
+            # MLPF
+            with torch.autocast(device_type="cuda", dtype=torch.bfloat16, enabled=True):
+                ymlpf = mlpf(batch.X, batch.mask)
+            ymlpf = unpack_predictions(ymlpf)
+
+            msk_ycand = ymlpf["cls_id"] != 0
+            cand_px = (ymlpf["pt"] * ymlpf["cos_phi"]) * msk_ycand
+            cand_py = (ymlpf["pt"] * ymlpf["sin_phi"]) * msk_ycand
+            p4_masked = ymlpf["momentum"] * msk_ycand.unsqueeze(-1)
+
+        # runs the DeepMET inference
         if is_train:
-            wx, wy = model(p4_masked)
+            wx, wy = deepmet(p4_masked)
         else:
             with torch.no_grad():
-                wx, wy = model(p4_masked)
+                wx, wy = deepmet(p4_masked)
 
-        pred_met = (wx * (torch.sum(cand_px, axis=1) ** 2)) + (wy * (torch.sum(cand_py, axis=1) ** 2))
+        if which_deepmet == "1":
+            pred_met = (torch.sum(wx * cand_px, axis=1) ** 2) + (torch.sum(wy * cand_py, axis=1) ** 2)
+        else:
+            pred_met = (wx * (torch.sum(cand_px, axis=1) ** 2)) + (wy * (torch.sum(cand_py, axis=1) ** 2))
 
-        # genMET
+        # genMET to compute the loss
         msk_gen = ygen["cls_id"] != 0
         gen_px = (ygen["pt"] * ygen["cos_phi"]) * msk_gen
         gen_py = (ygen["pt"] * ygen["sin_phi"]) * msk_gen
@@ -110,7 +129,7 @@ def train_and_valid(
 
         if is_train:
             loss["MET"] = torch.nn.functional.huber_loss(pred_met, true_met)
-            for param in model.parameters():
+            for param in deepmet.parameters():
                 param.grad = None
             loss["MET"].backward()
             loss_accum += loss["MET"].detach().cpu().item()
@@ -147,7 +166,9 @@ def train_and_valid(
                 intermediate_losses_v = train_and_valid(
                     rank,
                     outdir,
-                    model,
+                    deepmet,
+                    which_deepmet,
+                    mlpf,
                     optimizer,
                     train_loader,
                     valid_loader,
@@ -185,21 +206,29 @@ def train_and_valid(
                 checkpoint_path = "{}/checkpoint-{:02d}-{:.6f}.pth".format(
                     checkpoint_dir, val_freq_step, intermediate_losses_v["MET"]
                 )
-                save_checkpoint(checkpoint_path, model, optimizer, extra_state)
+                save_checkpoint(checkpoint_path, deepmet, optimizer, extra_state)
 
+        # use 300 to stop the validation frequency iteration
         if not is_train:
             if itrain > 300:
                 break
 
-    for loss_ in epoch_loss:
-        epoch_loss[loss_] = epoch_loss[loss_].cpu().item() / len(data_loader)
+    if not is_train:
+        for loss_ in epoch_loss:
+            epoch_loss[loss_] = epoch_loss[loss_].cpu().item() / 300
+
+    else:
+        for loss_ in epoch_loss:
+            epoch_loss[loss_] = epoch_loss[loss_].cpu().item() / len(data_loader)
 
     return epoch_loss
 
 
 def train_mlpf(
     rank,
-    model,
+    deepmet,
+    which_deepmet,
+    mlpf,
     optimizer,
     train_loader,
     valid_loader,
@@ -247,7 +276,9 @@ def train_mlpf(
         losses_t = train_and_valid(
             rank,
             outdir,
-            model,
+            deepmet,
+            which_deepmet,
+            mlpf,
             optimizer,
             train_loader=train_loader,
             valid_loader=valid_loader,
@@ -263,7 +294,9 @@ def train_mlpf(
         losses_v = train_and_valid(
             rank,
             outdir,
-            model,
+            deepmet,
+            which_deepmet,
+            mlpf,
             optimizer,
             train_loader=train_loader,
             valid_loader=valid_loader,
@@ -280,10 +313,10 @@ def train_mlpf(
             best_val_loss = losses_v["MET"]
             stale_epochs = 0
             torch.save(
-                {"model_state_dict": get_model_state_dict(model), "optimizer_state_dict": optimizer.state_dict()},
+                {"model_state_dict": get_model_state_dict(deepmet), "optimizer_state_dict": optimizer.state_dict()},
                 f"{outdir}/best_weights.pth",
             )
-            save_checkpoint(f"{outdir}/best_weights.pth", model, optimizer, extra_state)
+            save_checkpoint(f"{outdir}/best_weights.pth", deepmet, optimizer, extra_state)
         else:
             stale_epochs += 1
 
@@ -291,7 +324,7 @@ def train_mlpf(
             checkpoint_dir = Path(outdir) / "checkpoints"
             checkpoint_dir.mkdir(exist_ok=True)
             checkpoint_path = "{}/checkpoint-{:02d}-{:.6f}.pth".format(checkpoint_dir, epoch, losses_v["MET"])
-            save_checkpoint(checkpoint_path, model, optimizer, extra_state)
+            save_checkpoint(checkpoint_path, deepmet, optimizer, extra_state)
 
         if stale_epochs > patience:
             break

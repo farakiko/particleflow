@@ -6,21 +6,17 @@ Authors: Farouk Mokhtar, Joosep Pata, Eric Wulff
 
 import argparse
 import logging
-
-# import pickle as pkl
+import pickle as pkl
 from pathlib import Path
 
 import torch
-import tqdm
+import torch.nn as nn
 import yaml
 from pyg.logger import _configLogger, _logger
-
-# from pyg.mlpf import MLPF
+from pyg.mlpf import MLPF
 from pyg.PFDataset import get_interleaved_dataloaders
 from pyg.training_met import override_config, train_mlpf
-from pyg.utils import save_HPs
-
-# from pyg.utils import load_checkpoint
+from pyg.utils import load_checkpoint, save_HPs
 from utils import create_experiment_dir
 
 logging.basicConfig(level=logging.INFO)
@@ -86,7 +82,57 @@ parser.add_argument(
     choices=["math", "efficient", "flash", "flash_external"],
 )
 
-import torch.nn as nn
+parser.add_argument(
+    "--which-deepmet",
+    type=str,
+    default="1",
+    help="which deepmet to use",
+    choices=["1", "2"],
+)
+
+parser.add_argument("--use-PFcands", action="store_true", default=None, help="if True will not make use of MLPF")
+
+
+class DeepMET1(nn.Module):
+    def __init__(
+        self,
+        width=128,
+    ):
+        super(DeepMET1, self).__init__()
+
+        """
+        Takes as input the p4 of the MLPF/PF candidates; will run an encoder -> decoder to learn
+        two outputs per particle "w_xi" and "w_yi" which will enter the loss:
+            MET^2 = (sum_(w_x * pxi)^2) + sum_(w_y * pxi)^2)
+        """
+
+        self.act = nn.ELU
+
+        regression_nodes = 5
+        self.input_dim = regression_nodes
+
+        self.nn_encoder = nn.Sequential(
+            nn.Linear(self.input_dim, width),
+            self.act(),
+            nn.Linear(width, width),
+            self.act(),
+            nn.Linear(width, width),
+        )
+
+        self.nn_decoder = nn.Sequential(
+            nn.Linear(width, width),
+            self.act(),
+            nn.Linear(width, 2),
+        )
+
+    # @torch.compile
+    def forward(self, X):
+
+        encoded_element = self.nn_encoder(X)
+
+        MET = self.nn_decoder(encoded_element)
+
+        return MET[:, :, 0], MET[:, :, 1]
 
 
 class DeepMET2(nn.Module):
@@ -124,9 +170,9 @@ class DeepMET2(nn.Module):
     # @torch.compile
     def forward(self, X):
 
-        probX = self.nn_encoder(X)
+        encoded_element = self.nn_encoder(X)
 
-        encoded_element = probX.sum(axis=1)  # pool over particles; recall ~ [Batch, Particles, Feature]
+        encoded_element = encoded_element.sum(axis=1)  # pool over particles; recall ~ [Batch, Particles, Feature]
 
         MET = self.nn_decoder(encoded_element)
 
@@ -188,37 +234,38 @@ def main():
 
     _configLogger("mlpf", filename=logfile)
 
-    # # load the mlpf model
-    # with open(f"{loaddir}/model_kwargs.pkl", "rb") as f:
-    #     model_kwargs = pkl.load(f)
-    # _logger.info("model_kwargs: {}".format(model_kwargs))
+    # load the mlpf model
+    if args.use_PFcands:
+        _logger.info("Will use the PF candidates as input so no need to load MLPF", color="bold")
 
-    # model_kwargs["attention_type"] = config["model"]["attention"]["attention_type"]
+        mlpf = {}
+        mlpf_kwargs = {}
 
-    # model = MLPF(**model_kwargs).to(torch.device(rank))
-    # optimizer = torch.optim.AdamW(model.parameters(), lr=config["lr"])
+    else:
+        with open(f"{loaddir}/model_kwargs.pkl", "rb") as f:
+            mlpf_kwargs = pkl.load(f)
+        _logger.info("mlpf_kwargs: {}".format(mlpf_kwargs))
 
-    # checkpoint = torch.load(config["load"], map_location=torch.device(rank))
+        mlpf_kwargs["attention_type"] = config["model"]["attention"]["attention_type"]
 
-    # for k in model.state_dict().keys():
-    #     shp0 = model.state_dict()[k].shape
-    #     shp1 = checkpoint["model_state_dict"][k].shape
-    #     if shp0 != shp1:
-    #         raise Exception("shape mismatch in {}, {}!={}".format(k, shp0, shp1))
+        mlpf = MLPF(**mlpf_kwargs).to(torch.device(rank))
+        checkpoint = torch.load(config["load"], map_location=torch.device(rank))
 
-    # _logger.info("Loaded model weights from {}".format(config["load"]), color="bold")
+        mlpf = load_checkpoint(checkpoint, mlpf)
+        mlpf.eval()
 
-    # model, optimizer = load_checkpoint(checkpoint, model, optimizer)
+        _logger.info("Loaded model weights from {}".format(config["load"]), color="bold")
 
-    model = DeepMET2()
-    optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4)
-    model_kwargs = {}
-
-    model.to(rank)
-    model.train()
+    # define the deepmet model
+    if args.which_deepmet == "1":
+        deepmet = DeepMET1().to(torch.device(rank))
+    else:
+        deepmet = DeepMET2().to(torch.device(rank))
+    deepmet.train()
+    optimizer = torch.optim.AdamW(deepmet.parameters(), lr=1e-4)
 
     if args.train:
-        save_HPs(args, model, model_kwargs, outdir)  # save model_kwargs and hyperparameters
+        save_HPs(args, deepmet, mlpf_kwargs, outdir)  # save model_kwargs and hyperparameters
         _logger.info("Creating experiment dir {}".format(outdir))
         _logger.info(f"Model directory {outdir}", color="bold")
 
@@ -231,24 +278,27 @@ def main():
             use_ray=False,
         )
 
-        if args.in_memory:
-            train_loader = []
-            for i, batch in tqdm.tqdm(enumerate(loaders["train"])):
-                train_loader += [batch]
-                if i == args.numtrain:
-                    break
-            loaders["train"] = train_loader
+        # if args.in_memory:
+        #     import tqdm
+        #     train_loader = []
+        #     for i, batch in tqdm.tqdm(enumerate(loaders["train"])):
+        #         train_loader += [batch]
+        #         if i == args.numtrain:
+        #             break
+        #     loaders["train"] = train_loader
 
-            valid_loader = []
-            for i, batch in tqdm.tqdm(enumerate(loaders["valid"])):
-                valid_loader += [batch]
-                if i == args.numvalid:
-                    break
-            loaders["valid"] = valid_loader
+        #     valid_loader = []
+        #     for i, batch in tqdm.tqdm(enumerate(loaders["valid"])):
+        #         valid_loader += [batch]
+        #         if i == args.numvalid:
+        #             break
+        #     loaders["valid"] = valid_loader
 
         train_mlpf(
             rank,
-            model,
+            deepmet,
+            args.which_deepmet,
+            mlpf,
             optimizer,
             loaders["train"],
             loaders["valid"],
