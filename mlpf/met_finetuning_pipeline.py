@@ -236,13 +236,13 @@ def main():
 
     # load the mlpf model
     if args.use_PFcands:
-        _logger.info("Will use the PF candidates as input so no need to load MLPF", color="bold")
+        _logger.info("Will use the PF candidates as input so no need to load MLPF", color="orange")
 
         mlpf = {}
         mlpf_kwargs = {}
 
     else:
-        _logger.info("Will use the MLPF cands", color="bold")
+        _logger.info("Will use the MLPF cands", color="orange")
 
         with open(f"{loaddir}/model_kwargs.pkl", "rb") as f:
             mlpf_kwargs = pkl.load(f)
@@ -256,14 +256,14 @@ def main():
         mlpf = load_checkpoint(checkpoint, mlpf)
         mlpf.eval()
 
-        _logger.info("Loaded model weights from {}".format(config["load"]), color="bold")
-
     # define the deepmet model
     if args.which_deepmet == "1":
-        _logger.info("Will use DeepMET model #1 (without pooling)", color="bold")
+        _logger.info("Will use DeepMET model #1 (without pooling)", color="orange")
+
         deepmet = DeepMET1().to(torch.device(rank))
     else:
-        _logger.info("Will use DeepMET model #2 (with pooling)", color="bold")
+        _logger.info("Will use DeepMET model #2 (with pooling)", color="orange")
+
         deepmet = DeepMET2().to(torch.device(rank))
     deepmet.train()
     optimizer = torch.optim.AdamW(deepmet.parameters(), lr=1e-4)
