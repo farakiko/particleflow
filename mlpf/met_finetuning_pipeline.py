@@ -196,8 +196,13 @@ def main():
         # the checkpoint is provided directly
         loaddir = str(Path(config["load"]).parent.parent)
 
+    if args.use_PFcands:
+        append_ = "PFcands"
+    else:
+        append_ = "MLPFcands"
+
     outdir = create_experiment_dir(
-        prefix=(args.prefix or "") + Path(args.config).stem + "_",
+        prefix=(args.prefix or "") + Path(args.config).stem + "_" + f"{append_}_DeepMET{args.which_deepmet}_",
         experiments_dir=loaddir,
     )
 
