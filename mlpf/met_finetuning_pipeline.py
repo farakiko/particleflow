@@ -147,7 +147,7 @@ def main():
         append_ = "MLPFcands"
 
     outdir = create_experiment_dir(
-        prefix=(args.prefix or "") + f"_{append_}_DeepMET{args.which_deepmet}_",
+        prefix=(args.prefix or "") + f"_{append_}_",
         experiments_dir=loaddir,
     )
 
