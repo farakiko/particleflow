@@ -1,5 +1,5 @@
-import csv
-import os
+# import csv
+# import os
 import pickle as pkl
 import time
 from pathlib import Path
@@ -91,21 +91,18 @@ def train_and_valid(
 
         # first check if MLPF inference must be done
         if mlpf == {}:  # use PF-cands
-            msk_ycand = ycand["cls_id"] != 0
-            cand_px = (ycand["pt"] * ycand["cos_phi"]) * msk_ycand
-            cand_py = (ycand["pt"] * ycand["sin_phi"]) * msk_ycand
-            p4_masked = ycand["momentum"] * msk_ycand.unsqueeze(-1)
-
+            ypred = ycand
         else:  # run the MLPF inference to get the MLPF cands
-            # MLPF
             with torch.autocast(device_type="cuda", dtype=torch.bfloat16, enabled=True):
-                ymlpf = mlpf(batch.X, batch.mask)
+                with torch.no_grad():
+                    ymlpf = mlpf(batch.X, batch.mask)
             ymlpf = unpack_predictions(ymlpf)
+            ypred = ymlpf
 
-            msk_ycand = ymlpf["cls_id"] != 0
-            cand_px = (ymlpf["pt"] * ymlpf["cos_phi"]) * msk_ycand
-            cand_py = (ymlpf["pt"] * ymlpf["sin_phi"]) * msk_ycand
-            p4_masked = ymlpf["momentum"] * msk_ycand.unsqueeze(-1)
+        msk_ypred = ypred["cls_id"] != 0
+        pred_px = (ypred["pt"] * ypred["cos_phi"]) * msk_ypred
+        pred_py = (ypred["pt"] * ypred["sin_phi"]) * msk_ypred
+        p4_masked = ypred["momentum"] * msk_ypred.unsqueeze(-1)
 
         # runs the DeepMET inference
         if is_train:
@@ -116,12 +113,12 @@ def train_and_valid(
 
         if which_deepmet == "1":
             # pred_met = (torch.sum(wx * cand_px, axis=1) ** 2) + (torch.sum(wy * cand_py, axis=1) ** 2)
-            pred_met_x = torch.sum(wx * cand_px, axis=1)
-            pred_met_y = torch.sum(wy * cand_py, axis=1)
+            pred_met_x = torch.sum(wx * pred_px, axis=1)
+            pred_met_y = torch.sum(wy * pred_py, axis=1)
         else:
             # pred_met = (wx * (torch.sum(cand_px, axis=1) ** 2)) + (wy * (torch.sum(cand_py, axis=1) ** 2))
-            pred_met_x = wx * torch.sum(cand_px, axis=1)
-            pred_met_y = wy * torch.sum(cand_py, axis=1)
+            pred_met_x = wx * torch.sum(pred_px, axis=1)
+            pred_met_y = wy * torch.sum(pred_py, axis=1)
 
         # genMET to compute the loss
         msk_gen = ygen["cls_id"] != 0
@@ -155,58 +152,58 @@ def train_and_valid(
                 epoch_loss[loss_] = 0.0
             epoch_loss[loss_] += loss[loss_].detach()
 
-        if val_freq is not None and is_train:
+        # if val_freq is not None and is_train:
 
-            if itrain != 0 and itrain % val_freq == 0:
+        #     if itrain != 0 and itrain % val_freq == 0:
 
-                # compute intermediate training loss
-                intermediate_losses_t = {"MET": train_loss_accum / val_freq}
+        #         # compute intermediate training loss
+        #         intermediate_losses_t = {"MET": train_loss_accum / val_freq}
 
-                # compute intermediate validation loss
-                intermediate_losses_v, _ = train_and_valid(
-                    rank,
-                    outdir,
-                    deepmet,
-                    which_deepmet,
-                    mlpf,
-                    optimizer,
-                    train_loader,
-                    valid_loader,
-                    trainable,
-                    is_train=False,
-                    lr_schedule=None,
-                    epoch=epoch,
-                    val_freq_step=None,
-                    dtype=dtype,
-                )
+        #         # compute intermediate validation loss
+        #         intermediate_losses_v, _ = train_and_valid(
+        #             rank,
+        #             outdir,
+        #             deepmet,
+        #             which_deepmet,
+        #             mlpf,
+        #             optimizer,
+        #             train_loader,
+        #             valid_loader,
+        #             trainable,
+        #             is_train=False,
+        #             lr_schedule=None,
+        #             epoch=epoch,
+        #             val_freq_step=None,
+        #             dtype=dtype,
+        #         )
 
-                intermediate_metrics = dict(
-                    loss=intermediate_losses_t["MET"],
-                    val_loss=intermediate_losses_v["MET"],
-                    inside_epoch=epoch,
-                    step=val_freq_step,
-                )
-                val_freq_log = os.path.join(outdir, "val_freq_log.csv")
-                with open(val_freq_log, "a", newline="") as f:
-                    writer = csv.DictWriter(f, fieldnames=intermediate_metrics.keys())
-                    if os.stat(val_freq_log).st_size == 0:  # only write header if file is empty
-                        writer.writeheader()
-                    writer.writerow(intermediate_metrics)
+        #         intermediate_metrics = dict(
+        #             loss=intermediate_losses_t["MET"],
+        #             val_loss=intermediate_losses_v["MET"],
+        #             inside_epoch=epoch,
+        #             step=val_freq_step,
+        #         )
+        #         val_freq_log = os.path.join(outdir, "val_freq_log.csv")
+        #         with open(val_freq_log, "a", newline="") as f:
+        #             writer = csv.DictWriter(f, fieldnames=intermediate_metrics.keys())
+        #             if os.stat(val_freq_log).st_size == 0:  # only write header if file is empty
+        #                 writer.writeheader()
+        #             writer.writerow(intermediate_metrics)
 
-                if not (tensorboard_writer is None):
-                    tensorboard_writer.add_scalar("step/loss_intermediate_t", intermediate_losses_t["MET"], val_freq_step)
-                    tensorboard_writer.add_scalar("step/loss_intermediate_v", intermediate_losses_v["MET"], val_freq_step)
+        #         if not (tensorboard_writer is None):
+        #             tensorboard_writer.add_scalar("step/loss_intermediate_t", intermediate_losses_t["MET"], val_freq_step)
+        #             tensorboard_writer.add_scalar("step/loss_intermediate_v", intermediate_losses_v["MET"], val_freq_step)
 
-                val_freq_step += 1
+        #         val_freq_step += 1
 
-                # save checkpoint every validation step
-                extra_state = {"epoch": epoch}
-                checkpoint_dir = Path(outdir) / "checkpoints_val_freq"
-                checkpoint_dir.mkdir(exist_ok=True)
-                checkpoint_path = "{}/checkpoint-{:02d}-{:.6f}.pth".format(
-                    checkpoint_dir, val_freq_step, intermediate_losses_v["MET"]
-                )
-                save_checkpoint(checkpoint_path, deepmet, optimizer, extra_state)
+        #         # save checkpoint every validation step
+        #         extra_state = {"epoch": epoch}
+        #         checkpoint_dir = Path(outdir) / "checkpoints_val_freq"
+        #         checkpoint_dir.mkdir(exist_ok=True)
+        #         checkpoint_path = "{}/checkpoint-{:02d}-{:.6f}.pth".format(
+        #             checkpoint_dir, val_freq_step, intermediate_losses_v["MET"]
+        #         )
+        #         save_checkpoint(checkpoint_path, deepmet, optimizer, extra_state)
 
         # use 300 to stop the validation frequency iteration
         if not is_train:
