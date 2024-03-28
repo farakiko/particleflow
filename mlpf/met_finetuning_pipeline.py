@@ -82,23 +82,16 @@ parser.add_argument(
     choices=["math", "efficient", "flash", "flash_external"],
 )
 
-parser.add_argument(
-    "--which-deepmet",
-    type=str,
-    default="1",
-    help="which deepmet to use",
-    choices=["1", "2"],
-)
 
 parser.add_argument("--use-PFcands", action="store_true", default=None, help="if True will not make use of MLPF")
 
 
-class DeepMET1(nn.Module):
+class DeepMET(nn.Module):
     def __init__(
         self,
         width=128,
     ):
-        super(DeepMET1, self).__init__()
+        super(DeepMET, self).__init__()
 
         """
         Takes as input the p4 of the MLPF/PF candidates; will run an encoder -> decoder to learn
@@ -108,18 +101,16 @@ class DeepMET1(nn.Module):
 
         self.act = nn.ELU
 
+        charge_nodes = 3
+        clf_nodes = 6
         regression_nodes = 5
-        self.input_dim = regression_nodes
+        self.input_dim = charge_nodes + clf_nodes + regression_nodes
 
-        self.nn_encoder = nn.Sequential(
+        self.nn = nn.Sequential(
             nn.Linear(self.input_dim, width),
             self.act(),
             nn.Linear(width, width),
             self.act(),
-            nn.Linear(width, width),
-        )
-
-        self.nn_decoder = nn.Sequential(
             nn.Linear(width, width),
             self.act(),
             nn.Linear(width, 2),
@@ -128,55 +119,9 @@ class DeepMET1(nn.Module):
     # @torch.compile
     def forward(self, X):
 
-        encoded_element = self.nn_encoder(X)
-
-        MET = self.nn_decoder(encoded_element)
+        MET = self.nn(X)
 
         return MET[:, :, 0], MET[:, :, 1]
-
-
-class DeepMET2(nn.Module):
-    def __init__(
-        self,
-        width=128,
-    ):
-        super(DeepMET2, self).__init__()
-
-        """
-        Takes as input the p4 of the MLPF/PF candidates; will run an encoder -> pooling -> decoder to learn
-        two outputs per event "w_x" and "w_y" which will enter the loss:
-            MET^2 = (w_x * (sum_pxi)^2) + (w_y * (sum_pyi)^2)
-        """
-
-        self.act = nn.ELU
-
-        regression_nodes = 5
-        self.input_dim = regression_nodes
-
-        self.nn_encoder = nn.Sequential(
-            nn.Linear(self.input_dim, width),
-            self.act(),
-            nn.Linear(width, width),
-            self.act(),
-            nn.Linear(width, width),
-        )
-
-        self.nn_decoder = nn.Sequential(
-            nn.Linear(width, width),
-            self.act(),
-            nn.Linear(width, 2),
-        )
-
-    # @torch.compile
-    def forward(self, X):
-
-        encoded_element = self.nn_encoder(X)
-
-        encoded_element = encoded_element.sum(axis=1)  # pool over particles; recall ~ [Batch, Particles, Feature]
-
-        MET = self.nn_decoder(encoded_element)
-
-        return MET[:, 0], MET[:, 1]
 
 
 def main():
@@ -264,15 +209,7 @@ def main():
         _logger.info(mlpf)
 
     # define the deepmet model
-    if args.which_deepmet == "1":
-        _logger.info("Will use DeepMET model #1 (without pooling)", color="orange")
-
-        deepmet = DeepMET1().to(torch.device(rank))
-    else:
-        _logger.info("Will use DeepMET model #2 (with pooling)", color="orange")
-
-        deepmet = DeepMET2().to(torch.device(rank))
-
+    deepmet = DeepMET().to(torch.device(rank))
     deepmet.train()
     optimizer = torch.optim.AdamW(deepmet.parameters(), lr=args.lr)
     _logger.info(deepmet)
@@ -291,26 +228,9 @@ def main():
             use_ray=False,
         )
 
-        # if args.in_memory:
-        #     import tqdm
-        #     train_loader = []
-        #     for i, batch in tqdm.tqdm(enumerate(loaders["train"])):
-        #         train_loader += [batch]
-        #         if i == args.numtrain:
-        #             break
-        #     loaders["train"] = train_loader
-
-        #     valid_loader = []
-        #     for i, batch in tqdm.tqdm(enumerate(loaders["valid"])):
-        #         valid_loader += [batch]
-        #         if i == args.numvalid:
-        #             break
-        #     loaders["valid"] = valid_loader
-
         train_mlpf(
             rank,
             deepmet,
-            args.which_deepmet,
             mlpf,
             optimizer,
             loaders["train"],
@@ -319,9 +239,7 @@ def main():
             config["patience"],
             outdir,
             trainable=config["model"]["trainable"],
-            dtype=dtype,
             checkpoint_freq=config["checkpoint_freq"],
-            val_freq=config["val_freq"],
         )
 
 

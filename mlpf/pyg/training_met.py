@@ -43,21 +43,14 @@ def configure_model_trainable(model, trainable, is_training):
 
 def train_and_valid(
     rank,
-    outdir,
     deepmet,
-    which_deepmet,
     mlpf,
     optimizer,
     train_loader,
     valid_loader,
     trainable,
     is_train=True,
-    lr_schedule=None,
     epoch=None,
-    val_freq=None,
-    val_freq_step=0,
-    dtype=torch.float32,
-    tensorboard_writer=None,
 ):
     """
     Performs training over a given epoch. Will run a validation step every val_freq.
@@ -105,36 +98,30 @@ def train_and_valid(
         p4_masked = ypred["momentum"] * msk_ypred.unsqueeze(-1)
 
         # runs the DeepMET inference
+        # X = p4_masked
+        X = torch.cat([p4_masked, ypred["cls_id_onehot"], ypred["charge"]], axis=-1)
+
         if is_train:
-            wx, wy = deepmet(p4_masked)
+            wx, wy = deepmet(X)
         else:
             with torch.no_grad():
-                wx, wy = deepmet(p4_masked)
+                wx, wy = deepmet(X)
 
-        if which_deepmet == "1":
-            # pred_met = (torch.sum(wx * cand_px, axis=1) ** 2) + (torch.sum(wy * cand_py, axis=1) ** 2)
-            pred_met_x = torch.sum(wx * pred_px, axis=1)
-            pred_met_y = torch.sum(wy * pred_py, axis=1)
-        else:
-            # pred_met = (wx * (torch.sum(cand_px, axis=1) ** 2)) + (wy * (torch.sum(cand_py, axis=1) ** 2))
-            pred_met_x = wx * torch.sum(pred_px, axis=1)
-            pred_met_y = wy * torch.sum(pred_py, axis=1)
+        pred_met_x = torch.sum(wx * pred_px, axis=1)
+        pred_met_y = torch.sum(wy * pred_py, axis=1)
 
         # genMET to compute the loss
         msk_gen = ygen["cls_id"] != 0
         gen_px = (ygen["pt"] * ygen["cos_phi"]) * msk_gen
         gen_py = (ygen["pt"] * ygen["sin_phi"]) * msk_gen
 
-        # true_met = torch.sum(gen_px, axis=1) ** 2 + torch.sum(gen_py, axis=1) ** 2
         true_met_x = torch.sum(gen_px, axis=1)
         true_met_y = torch.sum(gen_py, axis=1)
 
         if is_train:
-            # loss["MET"] = torch.nn.functional.huber_loss(pred_met, true_met)
             loss["MET"] = torch.nn.functional.huber_loss(true_met_x, pred_met_x) + torch.nn.functional.huber_loss(
                 true_met_y, pred_met_y
             )
-
             for param in deepmet.parameters():
                 param.grad = None
             loss["MET"].backward()
@@ -142,7 +129,6 @@ def train_and_valid(
             train_loss_accum += loss["MET"].detach().cpu().item()
         else:
             with torch.no_grad():
-                # loss["MET"] = torch.nn.functional.huber_loss(pred_met, true_met)
                 loss["MET"] = torch.nn.functional.huber_loss(true_met_x, pred_met_x) + torch.nn.functional.huber_loss(
                     true_met_y, pred_met_y
                 )
@@ -152,79 +138,15 @@ def train_and_valid(
                 epoch_loss[loss_] = 0.0
             epoch_loss[loss_] += loss[loss_].detach()
 
-        # if val_freq is not None and is_train:
+    for loss_ in epoch_loss:
+        epoch_loss[loss_] = epoch_loss[loss_].cpu().item() / len(data_loader)
 
-        #     if itrain != 0 and itrain % val_freq == 0:
-
-        #         # compute intermediate training loss
-        #         intermediate_losses_t = {"MET": train_loss_accum / val_freq}
-
-        #         # compute intermediate validation loss
-        #         intermediate_losses_v, _ = train_and_valid(
-        #             rank,
-        #             outdir,
-        #             deepmet,
-        #             which_deepmet,
-        #             mlpf,
-        #             optimizer,
-        #             train_loader,
-        #             valid_loader,
-        #             trainable,
-        #             is_train=False,
-        #             lr_schedule=None,
-        #             epoch=epoch,
-        #             val_freq_step=None,
-        #             dtype=dtype,
-        #         )
-
-        #         intermediate_metrics = dict(
-        #             loss=intermediate_losses_t["MET"],
-        #             val_loss=intermediate_losses_v["MET"],
-        #             inside_epoch=epoch,
-        #             step=val_freq_step,
-        #         )
-        #         val_freq_log = os.path.join(outdir, "val_freq_log.csv")
-        #         with open(val_freq_log, "a", newline="") as f:
-        #             writer = csv.DictWriter(f, fieldnames=intermediate_metrics.keys())
-        #             if os.stat(val_freq_log).st_size == 0:  # only write header if file is empty
-        #                 writer.writeheader()
-        #             writer.writerow(intermediate_metrics)
-
-        #         if not (tensorboard_writer is None):
-        #             tensorboard_writer.add_scalar("step/loss_intermediate_t", intermediate_losses_t["MET"], val_freq_step)
-        #             tensorboard_writer.add_scalar("step/loss_intermediate_v", intermediate_losses_v["MET"], val_freq_step)
-
-        #         val_freq_step += 1
-
-        #         # save checkpoint every validation step
-        #         extra_state = {"epoch": epoch}
-        #         checkpoint_dir = Path(outdir) / "checkpoints_val_freq"
-        #         checkpoint_dir.mkdir(exist_ok=True)
-        #         checkpoint_path = "{}/checkpoint-{:02d}-{:.6f}.pth".format(
-        #             checkpoint_dir, val_freq_step, intermediate_losses_v["MET"]
-        #         )
-        #         save_checkpoint(checkpoint_path, deepmet, optimizer, extra_state)
-
-        # use 300 to stop the validation frequency iteration
-        if not is_train:
-            if itrain > 300:
-                break
-
-    if not is_train:
-        for loss_ in epoch_loss:
-            epoch_loss[loss_] = epoch_loss[loss_].cpu().item() / 300
-
-    else:
-        for loss_ in epoch_loss:
-            epoch_loss[loss_] = epoch_loss[loss_].cpu().item() / len(data_loader)
-
-    return epoch_loss, val_freq_step
+    return epoch_loss
 
 
 def train_mlpf(
     rank,
     deepmet,
-    which_deepmet,
     mlpf,
     optimizer,
     train_loader,
@@ -233,9 +155,7 @@ def train_mlpf(
     patience,
     outdir,
     trainable="all",
-    dtype=torch.float32,
     checkpoint_freq=None,
-    val_freq=None,
 ):
     """
     Will run a full training by calling train().
@@ -248,9 +168,6 @@ def train_mlpf(
         patience: number of stale epochs before stopping the training
         outdir: path to store the model weights and training plots
     """
-
-    global val_freq_step
-    val_freq_step = 0
 
     tensorboard_writer_train = SummaryWriter(f"{outdir}/runs/train")
     tensorboard_writer_valid = SummaryWriter(f"{outdir}/runs/valid")
@@ -267,15 +184,12 @@ def train_mlpf(
     stale_epochs, best_val_loss = torch.tensor(0, device=rank), float("inf")
 
     start_epoch = 1
-    val_freq_step = 0
     for epoch in range(start_epoch, num_epochs + 1):
         t0 = time.time()
 
-        losses_t, val_freq_step = train_and_valid(
+        losses_t = train_and_valid(
             rank,
-            outdir,
             deepmet,
-            which_deepmet,
             mlpf,
             optimizer,
             train_loader=train_loader,
@@ -283,17 +197,11 @@ def train_mlpf(
             trainable=trainable,
             is_train=True,
             epoch=epoch,
-            dtype=dtype,
-            val_freq=val_freq,
-            val_freq_step=val_freq_step,
-            tensorboard_writer=tensorboard_writer_train,
         )
 
-        losses_v, _ = train_and_valid(
+        losses_v = train_and_valid(
             rank,
-            outdir,
             deepmet,
-            which_deepmet,
             mlpf,
             optimizer,
             train_loader=train_loader,
@@ -301,9 +209,6 @@ def train_mlpf(
             trainable=trainable,
             is_train=False,
             epoch=epoch,
-            val_freq=val_freq,
-            val_freq_step=None,
-            dtype=dtype,
         )
 
         extra_state = {"epoch": epoch}
