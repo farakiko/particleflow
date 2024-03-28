@@ -59,15 +59,14 @@ def train_and_valid(
     dtype=torch.float32,
     tensorboard_writer=None,
 ):
-
-    configure_model_trainable(deepmet, trainable, is_train)
-
     """
     Performs training over a given epoch. Will run a validation step every val_freq.
     """
 
     train_or_valid = "train" if is_train else "valid"
     _logger.info(f"Initiating epoch #{epoch} {train_or_valid} run on device rank={rank}", color="red")
+
+    configure_model_trainable(deepmet, trainable, is_train)
 
     # this one will keep accumulating `train_loss` and then return the average
     epoch_loss = {}
@@ -83,7 +82,7 @@ def train_and_valid(
     )
 
     loss = {}
-    loss_accum = 0.0
+    train_loss_accum = 0.0
     for itrain, batch in iterator:
 
         batch = batch.to(rank, non_blocking=True)
@@ -142,8 +141,8 @@ def train_and_valid(
             for param in deepmet.parameters():
                 param.grad = None
             loss["MET"].backward()
-            loss_accum += loss["MET"].detach().cpu().item()
             optimizer.step()
+            train_loss_accum += loss["MET"].detach().cpu().item()
         else:
             with torch.no_grad():
                 # loss["MET"] = torch.nn.functional.huber_loss(pred_met, true_met)
@@ -156,22 +155,12 @@ def train_and_valid(
                 epoch_loss[loss_] = 0.0
             epoch_loss[loss_] += loss[loss_].detach()
 
-        if is_train:
-            step = (epoch - 1) * len(data_loader) + itrain
-            if not (tensorboard_writer is None):
-                tensorboard_writer.add_scalar("step/loss_train", loss_accum, step)
-                if itrain % 10 == 0:
-                    tensorboard_writer.flush()
-                loss_accum = 0.0
-
         if val_freq is not None and is_train:
 
             if itrain != 0 and itrain % val_freq == 0:
 
                 # compute intermediate training loss
-                intermediate_losses_t = {key: epoch_loss[key] for key in epoch_loss}
-                for loss_ in epoch_loss:
-                    intermediate_losses_t[loss_] = intermediate_losses_t[loss_].cpu().item() / itrain
+                intermediate_losses_t = {"MET": train_loss_accum / val_freq}
 
                 # compute intermediate validation loss
                 intermediate_losses_v, _ = train_and_valid(
