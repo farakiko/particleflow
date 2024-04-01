@@ -213,7 +213,7 @@ def main():
     if args.use_latentX:
         from pyg.mlpf_latent import MLPF_latent
 
-        mlpf_latent = MLPF_latent()
+        mlpf_latent = MLPF_latent(input_dim=17, width=256, embedding_dim=256, num_convs=3, num_classes=6)
 
         pretrained_dict = mlpf.state_dict()
         model_dict = mlpf_latent.state_dict()
