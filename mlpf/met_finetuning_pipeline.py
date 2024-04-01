@@ -228,6 +228,7 @@ def main():
         mlpf_latent.load_state_dict(pretrained_dict)
 
         mlpf_latent.to(rank)
+        mlpf_latent.eval()
 
         deepmet = DeepMET(input_dim=14 + mlpf_latent.nn_id[0].in_features + mlpf_latent.nn_id[-1].out_features).to(
             torch.device(rank)
