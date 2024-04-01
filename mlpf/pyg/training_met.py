@@ -151,6 +151,9 @@ def train_and_valid(
                 epoch_loss[loss_] = 0.0
             epoch_loss[loss_] += loss[loss_].detach()
 
+        if itrain == 100:
+            break
+
     for loss_ in epoch_loss:
         epoch_loss[loss_] = epoch_loss[loss_].cpu().item() / len(data_loader)
 
