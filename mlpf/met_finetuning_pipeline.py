@@ -85,10 +85,15 @@ parser.add_argument(
 
 parser.add_argument("--use-PFcands", action="store_true", default=None, help="if True will not make use of MLPF")
 
+parser.add_argument(
+    "--use-latentX", action="store_true", default=None, help="if True will use the latent representations of MLPF"
+)
+
 
 class DeepMET(nn.Module):
     def __init__(
         self,
+        input_dim=14,
         width=128,
     ):
         super(DeepMET, self).__init__()
@@ -97,17 +102,14 @@ class DeepMET(nn.Module):
         Takes as input the p4 of the MLPF/PF candidates; will run an encoder -> decoder to learn
         two outputs per particle "w_xi" and "w_yi" which will enter the loss:
             MET^2 = (sum_(w_x * pxi)^2) + sum_(w_y * pxi)^2)
+
+        Default input_dim is 14: stands for "charge_nodes + clf_nodes + regression_nodes"
         """
 
         self.act = nn.ELU
 
-        charge_nodes = 3
-        clf_nodes = 6
-        regression_nodes = 5
-        self.input_dim = charge_nodes + clf_nodes + regression_nodes
-
         self.nn = nn.Sequential(
-            nn.Linear(self.input_dim, width),
+            nn.Linear(input_dim, width),
             self.act(),
             nn.Linear(width, width),
             self.act(),
@@ -208,8 +210,32 @@ def main():
 
         _logger.info(mlpf)
 
+    if args.use_latentX:
+        from pyg.mlpf_latent import MLPF_latent
+
+        mlpf_latent = MLPF_latent()
+
+        pretrained_dict = mlpf.state_dict()
+        model_dict = mlpf_latent.state_dict()
+
+        # 1. filter out unnecessary keys
+        pretrained_dict = {k: v for k, v in pretrained_dict.items() if k in model_dict}
+        # 2. overwrite entries in the existing state dict
+        model_dict.update(pretrained_dict)
+        # 3. load the new state dict
+        mlpf_latent.load_state_dict(pretrained_dict)
+
+        mlpf_latent.to(rank)
+
+        deepmet = DeepMET(input_dim=14 + mlpf_latent.nn_id[0].in_features + mlpf_latent.nn_id[-1].out_features).to(
+            torch.device(rank)
+        )  # 791 is the latent representation of mlpf
+    else:
+        mlpf_latent = {}
+        deepmet = DeepMET().to(torch.device(rank))
+
     # define the deepmet model
-    deepmet = DeepMET().to(torch.device(rank))
+
     deepmet.train()
     optimizer = torch.optim.AdamW(deepmet.parameters(), lr=args.lr)
     _logger.info(deepmet)
@@ -232,6 +258,7 @@ def main():
             rank,
             deepmet,
             mlpf,
+            mlpf_latent,
             optimizer,
             loaders["train"],
             loaders["valid"],

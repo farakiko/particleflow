@@ -45,6 +45,7 @@ def train_and_valid(
     rank,
     deepmet,
     mlpf,
+    mlpf_latent,
     optimizer,
     train_loader,
     valid_loader,
@@ -92,14 +93,21 @@ def train_and_valid(
             ymlpf = unpack_predictions(ymlpf)
             ypred = ymlpf
 
+            if mlpf_latent != {}:
+                with torch.autocast(device_type="cuda", dtype=torch.bfloat16, enabled=True):
+                    with torch.no_grad():
+                        latentX = mlpf_latent(batch.X, batch.mask)
+
         msk_ypred = ypred["cls_id"] != 0
         pred_px = (ypred["pt"] * ypred["cos_phi"]) * msk_ypred
         pred_py = (ypred["pt"] * ypred["sin_phi"]) * msk_ypred
         p4_masked = ypred["momentum"] * msk_ypred.unsqueeze(-1)
 
         # runs the DeepMET inference
-        # X = p4_masked
-        X = torch.cat([p4_masked, ypred["cls_id_onehot"], ypred["charge"]], axis=-1)
+        if mlpf_latent != {}:
+            X = torch.cat([latentX, p4_masked, ypred["cls_id_onehot"], ypred["charge"]], axis=-1)
+        else:
+            X = torch.cat([p4_masked, ypred["cls_id_onehot"], ypred["charge"]], axis=-1)
 
         if is_train:
             wx, wy = deepmet(X)
@@ -148,6 +156,7 @@ def train_mlpf(
     rank,
     deepmet,
     mlpf,
+    mlpf_latent,
     optimizer,
     train_loader,
     valid_loader,
@@ -191,6 +200,7 @@ def train_mlpf(
             rank,
             deepmet,
             mlpf,
+            mlpf_latent,
             optimizer,
             train_loader=train_loader,
             valid_loader=valid_loader,
@@ -203,6 +213,7 @@ def train_mlpf(
             rank,
             deepmet,
             mlpf,
+            mlpf_latent,
             optimizer,
             train_loader=train_loader,
             valid_loader=valid_loader,
