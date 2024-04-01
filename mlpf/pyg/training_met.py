@@ -141,6 +141,11 @@ def train_and_valid(
                     true_met_y, pred_met_y
                 )
 
+        with torch.no_grad():
+            loss["MET_mlpf"] = torch.nn.functional.huber_loss(
+                true_met_x, torch.sum(pred_px, axis=1)
+            ) + torch.nn.functional.huber_loss(true_met_y, torch.sum(pred_py, axis=1))
+
         for loss_ in loss.keys():
             if loss_ not in epoch_loss:
                 epoch_loss[loss_] = 0.0
@@ -183,7 +188,7 @@ def train_mlpf(
 
     t0_initial = time.time()
 
-    losses_of_interest = ["MET"]
+    losses_of_interest = ["MET", "MET_mlpf"]
 
     losses = {}
     losses["train"], losses["valid"] = {}, {}
@@ -243,12 +248,12 @@ def train_mlpf(
         if stale_epochs > patience:
             break
 
-        for k, v in losses_t.items():
-            tensorboard_writer_train.add_scalar("epoch/loss_" + k, v, epoch)
-
         for loss in losses_of_interest:
             losses["train"][loss].append(losses_t[loss])
             losses["valid"][loss].append(losses_v[loss])
+
+        for k, v in losses_t.items():
+            tensorboard_writer_train.add_scalar("epoch/loss_" + k, v, epoch)
 
         for k, v in losses_v.items():
             tensorboard_writer_valid.add_scalar("epoch/loss_" + k, v, epoch)
