@@ -83,33 +83,25 @@ def train_and_valid(
         ygen = unpack_target(batch.ygen)
         ycand = unpack_target(batch.ycand)
 
-        # first check if MLPF inference must be done
-        if mlpf == {}:  # use PF-cands
-            ypred = ycand
-        else:  # run the MLPF inference to get the MLPF cands
+        # run the MLPF inference to get the MLPF cands
+        with torch.autocast(device_type="cuda", dtype=torch.bfloat16, enabled=True):
+            with torch.no_grad():
+                ymlpf = mlpf(batch.X, batch.mask)
+        ymlpf = unpack_predictions(ymlpf)
+
+        msk_ymlpf = ymlpf["cls_id"] != 0
+        pred_px = (ymlpf["pt"] * ymlpf["cos_phi"]) * msk_ymlpf
+        pred_py = (ymlpf["pt"] * ymlpf["sin_phi"]) * msk_ymlpf
+        p4_masked = ymlpf["momentum"] * msk_ymlpf.unsqueeze(-1)
+
+        if mlpf_latent != {}:  # get the latent representations
             with torch.autocast(device_type="cuda", dtype=torch.bfloat16, enabled=True):
                 with torch.no_grad():
-                    ymlpf = mlpf(batch.X, batch.mask)
-            ymlpf = unpack_predictions(ymlpf)
-            ypred = ymlpf
-
-            if mlpf_latent != {}:
-                with torch.autocast(device_type="cuda", dtype=torch.bfloat16, enabled=True):
-                    with torch.no_grad():
-                        latentX = mlpf_latent(batch.X, batch.mask)
-
-        msk_ypred = ypred["cls_id"] != 0
-        pred_px = (ypred["pt"] * ypred["cos_phi"]) * msk_ypred
-        pred_py = (ypred["pt"] * ypred["sin_phi"]) * msk_ypred
-        p4_masked = ypred["momentum"] * msk_ypred.unsqueeze(-1)
-
-        # runs the DeepMET inference
-        if mlpf_latent != {}:
-            X = torch.cat([latentX, p4_masked, ypred["cls_id_onehot"], ypred["charge"]], axis=-1)
+                    X = mlpf_latent(batch.X, batch.mask)
         else:
-            X = torch.cat([p4_masked, ypred["cls_id_onehot"], ypred["charge"]], axis=-1)
+            X = torch.cat([p4_masked, ymlpf["cls_id_onehot"], ymlpf["charge"]], axis=-1)
 
-        assert X.requires_grad is False, "Must freeze the MLPF model"
+        assert X.requires_grad is False, "The MLPF model must be frozen."
 
         if is_train:
             wx, wy = deepmet(X)
@@ -147,6 +139,14 @@ def train_and_valid(
             loss["MET_mlpf"] = torch.nn.functional.huber_loss(
                 true_met_x, torch.sum(pred_px, axis=1)
             ) + torch.nn.functional.huber_loss(true_met_y, torch.sum(pred_py, axis=1))
+
+            msk_ycand = ycand["cls_id"] != 0
+            cand_px = (ycand["pt"] * ycand["cos_phi"]) * msk_ycand
+            cand_py = (ycand["pt"] * ycand["sin_phi"]) * msk_ycand
+
+            loss["MET_PF"] = torch.nn.functional.huber_loss(
+                true_met_x, torch.sum(cand_px, axis=1)
+            ) + torch.nn.functional.huber_loss(true_met_y, torch.sum(cand_py, axis=1))
 
         for loss_ in loss.keys():
             if loss_ not in epoch_loss:
@@ -190,7 +190,7 @@ def train_mlpf(
 
     t0_initial = time.time()
 
-    losses_of_interest = ["MET", "MET_mlpf"]
+    losses_of_interest = ["MET", "MET_mlpf", "MET_PF"]
 
     losses = {}
     losses["train"], losses["valid"] = {}, {}

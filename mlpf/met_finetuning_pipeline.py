@@ -83,8 +83,6 @@ parser.add_argument(
 )
 
 
-parser.add_argument("--use-PFcands", action="store_true", default=None, help="if True will not make use of MLPF")
-
 parser.add_argument(
     "--use-latentX", action="store_true", default=None, help="if True will use the latent representations of MLPF"
 )
@@ -94,7 +92,7 @@ class DeepMET(nn.Module):
     def __init__(
         self,
         input_dim=14,
-        width=128,
+        width=256,
     ):
         super(DeepMET, self).__init__()
 
@@ -143,10 +141,7 @@ def main():
         # the checkpoint is provided directly
         loaddir = str(Path(config["load"]).parent.parent)
 
-    if args.use_PFcands:
-        append_ = "PFcands"
-    else:
-        append_ = "MLPFcands"
+    append_ = "MLPFcands"
 
     outdir = create_experiment_dir(
         prefix=(args.prefix or "") + f"_{append_}_",
@@ -173,7 +168,6 @@ def main():
 
         rank = 0
         _logger.info(f"Will use single-gpu: {torch.cuda.get_device_name(rank)}", color="purple")
-
     else:
         rank = "cpu"
         _logger.info("Will use cpu", color="purple")
@@ -187,28 +181,21 @@ def main():
     _configLogger("mlpf", filename=logfile)
 
     # load the mlpf model
-    if args.use_PFcands:
-        _logger.info("Will use the PF candidates as input so no need to load MLPF", color="orange")
+    _logger.info("Will use the MLPF cands", color="orange")
 
-        mlpf = {}
-        mlpf_kwargs = {}
+    with open(f"{loaddir}/model_kwargs.pkl", "rb") as f:
+        mlpf_kwargs = pkl.load(f)
+    _logger.info("mlpf_kwargs: {}".format(mlpf_kwargs))
 
-    else:
-        _logger.info("Will use the MLPF cands", color="orange")
+    mlpf_kwargs["attention_type"] = config["model"]["attention"]["attention_type"]
 
-        with open(f"{loaddir}/model_kwargs.pkl", "rb") as f:
-            mlpf_kwargs = pkl.load(f)
-        _logger.info("mlpf_kwargs: {}".format(mlpf_kwargs))
+    mlpf = MLPF(**mlpf_kwargs).to(torch.device(rank))
+    checkpoint = torch.load(config["load"], map_location=torch.device(rank))
 
-        mlpf_kwargs["attention_type"] = config["model"]["attention"]["attention_type"]
+    mlpf = load_checkpoint(checkpoint, mlpf)
+    mlpf.eval()
 
-        mlpf = MLPF(**mlpf_kwargs).to(torch.device(rank))
-        checkpoint = torch.load(config["load"], map_location=torch.device(rank))
-
-        mlpf = load_checkpoint(checkpoint, mlpf)
-        mlpf.eval()
-
-        _logger.info(mlpf)
+    _logger.info(mlpf)
 
     if args.use_latentX:
         from pyg.mlpf_latent import MLPF_latent
@@ -230,7 +217,7 @@ def main():
         mlpf_latent.to(rank)
         mlpf_latent.eval()
 
-        deepmet = DeepMET(input_dim=14 + mlpf_latent.nn_id[0].in_features + mlpf_latent.nn_id[-1].out_features).to(
+        deepmet = DeepMET(input_dim=mlpf_latent.nn_id[-1].out_features + mlpf_latent.nn_id[0].in_features).to(
             torch.device(rank)
         )  # 791 is the latent representation of mlpf
     else:
