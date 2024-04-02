@@ -109,6 +109,8 @@ def train_and_valid(
         else:
             X = torch.cat([p4_masked, ypred["cls_id_onehot"], ypred["charge"]], axis=-1)
 
+        assert X.requires_grad is True, "Must freeze the MLPF model"
+
         if is_train:
             wx, wy = deepmet(X)
         else:
