@@ -55,7 +55,7 @@ model:
     width: 512
     num_convs: 3
     dropout: 0.0
-    activation: "elu"
+    activation: "relu"
     # gravnet specific parameters
     k: 16
     propagate_dimensions: 32
@@ -63,15 +63,15 @@ model:
 
   attention:
     conv_type: attention
-    num_convs: 2
-    dropout_ff: 0.3
-    dropout_conv_id_mha: 0.3
-    dropout_conv_id_ff: 0.3
-    dropout_conv_reg_mha: 0.3
-    dropout_conv_reg_ff: 0.3
-    activation: "elu"
+    num_convs: 6
+    dropout_ff: 0
+    dropout_conv_id_mha: 0
+    dropout_conv_id_ff: 0
+    dropout_conv_reg_mha: 0
+    dropout_conv_reg_ff: 0
+    activation: "relu"
     head_dim: 16
-    num_heads: 16
+    num_heads: 32
     attention_type: flash
 
   mamba:
