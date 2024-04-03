@@ -209,23 +209,23 @@ def main():
             1,
             rank,
             config,
-            # use_cuda=rank != "cpu",
-            use_cuda=False,
+            use_cuda=rank != "cpu",
+            # use_cuda=False,
             pad_3d=True,
             use_ray=False,
         )
 
-        import tqdm
+        # import tqdm
 
-        train_list = []
-        for batch in tqdm.tqdm(loaders["train"]):
-            train_list += [batch]
-        loaders["train"] = train_list
+        # train_list = []
+        # for batch in tqdm.tqdm(loaders["train"]):
+        #     train_list += [batch]
+        # loaders["train"] = train_list
 
-        valid_list = []
-        for batch in tqdm.tqdm(loaders["valid"]):
-            valid_list += [batch]
-        loaders["valid"] = valid_list
+        # valid_list = []
+        # for batch in tqdm.tqdm(loaders["valid"]):
+        #     valid_list += [batch]
+        # loaders["valid"] = valid_list
 
         train_mlpf(
             rank,
