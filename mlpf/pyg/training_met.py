@@ -1,17 +1,11 @@
-# import csv
-# import os
 import pickle as pkl
 import time
 from pathlib import Path
 
 import numpy as np
 import torch
-
-# import torch.nn as nn
 import tqdm
 from pyg.logger import _logger
-
-# from pyg.training import FocalLoss
 from pyg.utils import (
     get_model_state_dict,
     save_checkpoint,
@@ -45,7 +39,7 @@ def train_and_valid(
     rank,
     deepmet,
     mlpf,
-    mlpf_latent,
+    use_latentX,
     optimizer,
     train_loader,
     valid_loader,
@@ -62,9 +56,6 @@ def train_and_valid(
 
     configure_model_trainable(deepmet, trainable, is_train)
 
-    # this one will keep accumulating `train_loss` and then return the average
-    epoch_loss = {}
-
     if is_train:
         data_loader = train_loader
     else:
@@ -75,15 +66,33 @@ def train_and_valid(
         enumerate(data_loader), total=len(data_loader), desc=f"Epoch {epoch} {train_or_valid} loop on rank={rank}"
     )
 
+    # this one will keep accumulating `train_loss` and then return the average
+    epoch_loss = {}
+
     loss = {}
     train_loss_accum = 0.0
+
+    if use_latentX:  # must set forward hooks to retrieve the intermediate latent representations
+        latent_reps = {}
+
+        def get_latent_reps(name):
+            def hook(mlpf, input, output):
+                latent_reps[name] = output.detach()
+
+            return hook
+
+        mlpf.conv_reg[0].dropout.register_forward_hook(get_latent_reps("conv_reg0"))
+        mlpf.conv_reg[1].dropout.register_forward_hook(get_latent_reps("conv_reg1"))
+        mlpf.conv_reg[2].dropout.register_forward_hook(get_latent_reps("conv_reg2"))
+        mlpf.nn_id.register_forward_hook(get_latent_reps("nn_id"))
+
     for itrain, batch in iterator:
 
         batch = batch.to(rank, non_blocking=True)
         ygen = unpack_target(batch.ygen)
         ycand = unpack_target(batch.ycand)
 
-        # run the MLPF inference to get the MLPF cands
+        # run the MLPF inference to get the MLPF cands / latent representations
         with torch.autocast(device_type="cuda", dtype=torch.bfloat16, enabled=True):
             with torch.no_grad():
                 ymlpf = mlpf(batch.X, batch.mask)
@@ -92,13 +101,25 @@ def train_and_valid(
         msk_ymlpf = ymlpf["cls_id"] != 0
         pred_px = (ymlpf["pt"] * ymlpf["cos_phi"]) * msk_ymlpf
         pred_py = (ymlpf["pt"] * ymlpf["sin_phi"]) * msk_ymlpf
-        p4_masked = ymlpf["momentum"] * msk_ymlpf.unsqueeze(-1)
 
-        if mlpf_latent != {}:  # get the latent representations
-            with torch.autocast(device_type="cuda", dtype=torch.bfloat16, enabled=True):
-                with torch.no_grad():
-                    X = mlpf_latent(batch.X, batch.mask)
-        else:
+        if use_latentX:  # use the latent representations
+            for layer in latent_reps:
+                if "conv" in layer:
+                    latent_reps[layer] *= batch.mask.unsqueeze(-1)
+
+            X = torch.cat(
+                [
+                    batch.X,
+                    latent_reps["conv_reg0"],
+                    latent_reps["conv_reg1"],
+                    latent_reps["conv_reg2"],
+                    latent_reps["nn_id"],
+                ],
+                axis=-1,
+            )
+
+        else:  # use the MLPF cands
+            p4_masked = ymlpf["momentum"] * msk_ymlpf.unsqueeze(-1)
             X = torch.cat([p4_masked, ymlpf["cls_id_onehot"], ymlpf["charge"]], axis=-1)
 
         assert X.requires_grad is False, "The MLPF model must be frozen."
@@ -135,6 +156,7 @@ def train_and_valid(
                     true_met_y, pred_met_y
                 )
 
+        # monitor the MLPF (and PF) MET loss
         with torch.no_grad():
             loss["MET_mlpf"] = torch.nn.functional.huber_loss(
                 true_met_x, torch.sum(pred_px, axis=1)
@@ -163,7 +185,7 @@ def train_mlpf(
     rank,
     deepmet,
     mlpf,
-    mlpf_latent,
+    use_latentX,
     optimizer,
     train_loader,
     valid_loader,
@@ -207,7 +229,7 @@ def train_mlpf(
             rank,
             deepmet,
             mlpf,
-            mlpf_latent,
+            use_latentX,
             optimizer,
             train_loader=train_loader,
             valid_loader=valid_loader,
@@ -220,7 +242,7 @@ def train_mlpf(
             rank,
             deepmet,
             mlpf,
-            mlpf_latent,
+            use_latentX,
             optimizer,
             train_loader=train_loader,
             valid_loader=valid_loader,

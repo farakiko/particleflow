@@ -88,33 +88,39 @@ parser.add_argument(
 )
 
 
+def ffn(input_dim, output_dim, width, act, dropout):
+    return nn.Sequential(
+        nn.Linear(input_dim, width),
+        act(),
+        torch.nn.LayerNorm(width),
+        nn.Dropout(dropout),
+        nn.Linear(width, output_dim),
+    )
+
+
 class DeepMET(nn.Module):
     def __init__(
         self,
         input_dim=14,
+        output_dim=2,
         width=256,
+        dropout=0,
     ):
         super(DeepMET, self).__init__()
 
         """
-        Takes as input the p4 of the MLPF/PF candidates; will run an encoder -> decoder to learn
-        two outputs per particle "w_xi" and "w_yi" which will enter the loss:
-            MET^2 = (sum_(w_x * pxi)^2) + sum_(w_y * pxi)^2)
+        Takes as input either (1) the MLPF candidates OR (2) the latent representations of the MLPF candidates,
+        and runs an MLP to predict two outputs per candidate: "w_xi" and "w_yi"; which will enter the loss as follows:
+            pred_met_x = sum(w_xi * pxi)
+            pred_met_y = sum(w_yi * pyi)
 
-        Default input_dim is 14: stands for "charge_nodes + clf_nodes + regression_nodes"
+            LOSS = Huber(true_met_x, pred_met_x) + Huber(true_met_y, pred_met_y)
+
+        Note: default `input_dim` is 14 which stands for "clf_nodes (6) + charge_nodes (3) + regression_nodes (5)"
         """
 
         self.act = nn.ELU
-
-        self.nn = nn.Sequential(
-            nn.Linear(input_dim, width),
-            self.act(),
-            nn.Linear(width, width),
-            self.act(),
-            nn.Linear(width, width),
-            self.act(),
-            nn.Linear(width, 2),
-        )
+        self.nn = ffn(input_dim, output_dim, width, self.act, dropout)
 
     # @torch.compile
     def forward(self, X):
@@ -141,10 +147,8 @@ def main():
         # the checkpoint is provided directly
         loaddir = str(Path(config["load"]).parent.parent)
 
-    append_ = "MLPFcands"
-
     outdir = create_experiment_dir(
-        prefix=(args.prefix or "") + f"_{append_}_",
+        prefix=(args.prefix or "") + "_",
         experiments_dir=loaddir,
     )
 
@@ -153,13 +157,8 @@ def main():
     with open((Path(outdir) / config_filename), "w") as file:
         yaml.dump(config, file)
 
-    if args.train:
-        logfile = f"{outdir}/train.log"
-        _configLogger("mlpf", filename=logfile)
-    else:
-        outdir = str(Path(args.load).parent.parent)
-        logfile = f"{outdir}/test.log"
-        _configLogger("mlpf", filename=logfile)
+    logfile = f"{outdir}/train.log"
+    _configLogger("mlpf", filename=logfile)
 
     if config["gpus"]:
         assert torch.cuda.device_count() > 0, "--No gpu available"
@@ -172,16 +171,10 @@ def main():
         rank = "cpu"
         _logger.info("Will use cpu", color="purple")
 
-    pad_3d = True
-    use_cuda = rank != "cpu"
-
-    dtype = getattr(torch, config["dtype"])
-    _logger.info("using dtype={}".format(dtype))
-
+    # load the pre-trained mlpf model
     _configLogger("mlpf", filename=logfile)
 
-    # load the mlpf model
-    _logger.info("Will use the MLPF cands", color="orange")
+    _logger.info("Will load a pre-trained MLPF model", color="orange")
 
     with open(f"{loaddir}/model_kwargs.pkl", "rb") as f:
         mlpf_kwargs = pkl.load(f)
@@ -197,36 +190,13 @@ def main():
 
     _logger.info(mlpf)
 
-    if args.use_latentX:
-        from pyg.mlpf_latent import MLPF_latent
-
-        mlpf_latent = MLPF_latent(
-            conv_type="attention", input_dim=17, width=256, embedding_dim=256, num_convs=3, num_classes=6
-        )
-
-        pretrained_dict = mlpf.state_dict()
-        model_dict = mlpf_latent.state_dict()
-
-        # 1. filter out unnecessary keys
-        pretrained_dict = {k: v for k, v in pretrained_dict.items() if k in model_dict}
-        # 2. overwrite entries in the existing state dict
-        model_dict.update(pretrained_dict)
-        # 3. load the new state dict
-        mlpf_latent.load_state_dict(pretrained_dict)
-
-        mlpf_latent.to(rank)
-        mlpf_latent.eval()
-
-        deepmet = DeepMET(input_dim=mlpf_latent.nn_id[-1].out_features + mlpf_latent.nn_id[0].in_features).to(
-            torch.device(rank)
-        )  # 791 is the latent representation of mlpf
+    if args.use_latentX:  # the dimension (791) will be the same as the input to one of the regression MLPs
+        deepmet_input_dim = mlpf.nn_pt.nn[0].in_features
     else:
-        mlpf_latent = {}
-        deepmet = DeepMET().to(torch.device(rank))
+        deepmet_input_dim = 14
 
     # define the deepmet model
-
-    deepmet.train()
+    deepmet = DeepMET(input_dim=deepmet_input_dim).to(torch.device(rank))
     optimizer = torch.optim.AdamW(deepmet.parameters(), lr=args.lr)
     _logger.info(deepmet)
 
@@ -239,8 +209,8 @@ def main():
             1,
             rank,
             config,
-            use_cuda,
-            pad_3d,
+            use_cuda=rank != "cpu",
+            pad_3d=True,
             use_ray=False,
         )
 
@@ -248,7 +218,7 @@ def main():
             rank,
             deepmet,
             mlpf,
-            mlpf_latent,
+            args.use_latentX,
             optimizer,
             loaders["train"],
             loaders["valid"],
