@@ -90,11 +90,10 @@ def train_and_valid(
 
         batch = batch.to(rank, non_blocking=True)
         ygen = unpack_target(batch.ygen)
-        ycand = unpack_target(batch.ycand)
 
-        # run the MLPF inference to get the MLPF cands / latent representations
-        with torch.autocast(device_type="cuda", dtype=torch.bfloat16, enabled=True):
-            with torch.no_grad():
+        # run the MLPF model in inference mode to get the MLPF cands / latent representations
+        with torch.no_grad():
+            with torch.autocast(device_type="cuda", dtype=torch.bfloat16, enabled=True):
                 ymlpf = mlpf(batch.X, batch.mask)
         ymlpf = unpack_predictions(ymlpf)
 
@@ -162,6 +161,7 @@ def train_and_valid(
                 true_met_x, torch.sum(pred_px, axis=1)
             ) + torch.nn.functional.huber_loss(true_met_y, torch.sum(pred_py, axis=1))
 
+            ycand = unpack_target(batch.ycand)
             msk_ycand = ycand["cls_id"] != 0
             cand_px = (ycand["pt"] * ycand["cos_phi"]) * msk_ycand
             cand_py = (ycand["pt"] * ycand["sin_phi"]) * msk_ycand
