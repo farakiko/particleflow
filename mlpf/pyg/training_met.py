@@ -66,11 +66,9 @@ def train_and_valid(
         enumerate(data_loader), total=len(data_loader), desc=f"Epoch {epoch} {train_or_valid} loop on rank={rank}"
     )
 
-    # this one will keep accumulating `train_loss` and then return the average
-    epoch_loss = {}
+    epoch_loss = {}  # this one will keep accumulating `train_loss` and then return the average
 
-    loss = {}
-    train_loss_accum = 0.0
+    loss = {}  # this one is redefined every iteration
 
     if use_latentX:  # must set forward hooks to retrieve the intermediate latent representations
         latent_reps = {}
@@ -92,9 +90,10 @@ def train_and_valid(
         ygen = unpack_target(batch.ygen)
 
         # run the MLPF model in inference mode to get the MLPF cands / latent representations
-        with torch.no_grad():
-            with torch.autocast(device_type="cuda", dtype=torch.bfloat16, enabled=True):
-                ymlpf = mlpf(batch.X, batch.mask)
+        for i in range(1000):
+            with torch.no_grad():
+                with torch.autocast(device_type="cuda", dtype=torch.bfloat16, enabled=True):
+                    ymlpf = mlpf(batch.X, batch.mask)
         ymlpf = unpack_predictions(ymlpf)
 
         msk_ymlpf = ymlpf["cls_id"] != 0
@@ -148,7 +147,6 @@ def train_and_valid(
                 param.grad = None
             loss["MET"].backward()
             optimizer.step()
-            train_loss_accum += loss["MET"].detach().cpu().item()
         else:
             with torch.no_grad():
                 loss["MET"] = torch.nn.functional.huber_loss(true_met_x, pred_met_x) + torch.nn.functional.huber_loss(
