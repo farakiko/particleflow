@@ -209,10 +209,23 @@ def main():
             1,
             rank,
             config,
-            use_cuda=rank != "cpu",
+            # use_cuda=rank != "cpu",
+            use_cuda=False,
             pad_3d=True,
             use_ray=False,
         )
+
+        import tqdm
+
+        train_list = []
+        for batch in tqdm.tqdm(loaders["train"]):
+            train_list += [batch]
+        loaders["train"] = train_list
+
+        valid_list = []
+        for batch in tqdm.tqdm(loaders["valid"]):
+            valid_list += [batch]
+        loaders["valid"] = valid_list
 
         train_mlpf(
             rank,
@@ -233,7 +246,7 @@ def main():
 if __name__ == "__main__":
 
     # e.g.
-    # noqa: python mlpf/met_finetuning_pipeline.py --dataset clic --data-dir tensorflow_datasets --config parameters/pytorch/pyg-clic-ttbar-qq.yaml --gpus 1 --prefix MLPF_test1 --num-epochs 10 --train --load /pfvol/experiments/MLPF_clic_A100_1gpu_pyg-clic_20240322_233518_004447/best_weights.pth --gpu-batch-multiplier 100 --num-workers 4 --prefetch-factor 20 --checkpoint-freq 1 --lr 1e-6
+    # noqa: python mlpf/met_finetuning_pipeline.py --dataset clic --data-dir tensorflow_datasets --config parameters/pytorch/pyg-clic-ttbar-qq.yaml --gpus 1 --prefix MLPF_test1 --num-epochs 10 --train --load /pfvol/experiments/MLPF_clic_A100_1gpu_pyg-clic_20240322_233518_004447/best_weights.pth --gpu-batch-multiplier 100 --num-workers 2 --prefetch-factor 2 --checkpoint-freq 1 --lr 1e-6 --use-latentX
     # git checkout 8d9065cba1af49b97c63c4701789a7f7a1fbcd47 /home/jovyan/particleflow/mlpf/pyg/mlpf.py
     # git checkout 8d9065cba1af49b97c63c4701789a7f7a1fbcd47 /home/jovyan/particleflow/mlpf/pyg/utils.py
     main()
