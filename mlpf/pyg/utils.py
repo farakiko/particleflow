@@ -4,8 +4,7 @@ import pickle as pkl
 import pandas as pd
 import torch
 import torch.utils.data
-from torch.optim.lr_scheduler import OneCycleLR, CosineAnnealingLR, ConstantLR
-
+from torch.optim.lr_scheduler import ConstantLR, CosineAnnealingLR, OneCycleLR
 
 # https://github.com/ahlinist/cmssw/blob/1df62491f48ef964d198f574cdfcccfd17c70425/DataFormats/ParticleFlowReco/interface/PFBlockElement.h#L33
 # https://github.com/cms-sw/cmssw/blob/master/DataFormats/ParticleFlowCandidate/src/PFCandidate.cc#L254
@@ -168,7 +167,7 @@ def unpack_target(y):
     # note ~ momentum = ["pt", "eta", "sin_phi", "cos_phi", "energy"]
     ret["momentum"] = y[..., 2:7].to(dtype=torch.float32)
     ret["p4"] = torch.cat(
-        [ret["pt"].unsqueeze(1), ret["eta"].unsqueeze(1), ret["phi"].unsqueeze(1), ret["energy"].unsqueeze(1)], axis=1
+        [ret["pt"].unsqueeze(-1), ret["eta"].unsqueeze(-1), ret["phi"].unsqueeze(-1), ret["energy"].unsqueeze(-1)], axis=-1
     )
 
     ret["genjet_idx"] = y[..., -1].long()
