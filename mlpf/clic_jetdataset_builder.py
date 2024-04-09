@@ -2,7 +2,6 @@ import argparse
 import os
 import pickle as pkl
 import random
-from pathlib import Path
 
 import awkward as ak
 import fastjet
@@ -118,14 +117,6 @@ def main():
 
     # override loaded config with values from command line args
     config = override_config(config, args)
-
-    assert config["load"], "Must pass an MLPF model to --load"
-
-    if "best_weights" in Path(config["load"]).name:
-        loaddir = str(Path(config["load"]).parent)
-    else:
-        # the checkpoint is provided directly
-        loaddir = str(Path(config["load"]).parent.parent)
 
     if config["gpus"]:
         assert torch.cuda.device_count() > 0, "--No gpu available"
