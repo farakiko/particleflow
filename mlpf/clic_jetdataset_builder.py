@@ -228,8 +228,10 @@ def main():
             for k, v in ymlpf.items():
                 ymlpf[k] = v.detach().cpu()
 
-            jets_coll = {}
+            msk_ymlpf = ymlpf["cls_id"] != 0
+            ymlpf["p4"] = ymlpf["p4"] * msk_ymlpf.unsqueeze(-1)
 
+            jets_coll = {}
             #######################
             # get the reco jet collection
             vec = vector.awk(
