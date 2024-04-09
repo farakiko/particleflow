@@ -313,7 +313,7 @@ def main():
                             mlpfcands_momentum=ymlpf["momentum"][iev][msk_indices],
                             mlpfcands_pid=ymlpf["cls_id_onehot"][iev][msk_indices],
                             mlpfcands_charge=ymlpf["charge"][iev][msk_indices],
-                            # mlpfcands_latentX=ymlpf["latentX"][iev][msk_indices],
+                            mlpfcands_latentX=ymlpf["latentX"][iev][msk_indices],
                         )
                     ]
 
