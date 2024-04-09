@@ -117,8 +117,9 @@ def train_and_valid(
             )
 
         else:  # use the MLPF cands
-            p4_masked = ymlpf["momentum"] * msk_ymlpf.unsqueeze(-1)
-            X = torch.cat([p4_masked, ymlpf["cls_id_onehot"], ymlpf["charge"]], axis=-1)
+            # p4_masked = ymlpf["momentum"] * msk_ymlpf.unsqueeze(-1)
+            # X = torch.cat([p4_masked, ymlpf["cls_id_onehot"], ymlpf["charge"]], axis=-1)
+            X = torch.cat([ymlpf["momentum"], ymlpf["cls_id_onehot"], ymlpf["charge"]], axis=-1)
 
         assert X.requires_grad is False, "The MLPF model must be frozen."
 
