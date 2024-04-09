@@ -12,7 +12,6 @@ import tqdm
 import vector
 import yaml
 from jet_utils import match_two_jet_collections
-from pyg.logger import _logger
 from pyg.mlpf import MLPF
 from pyg.PFDataset import get_interleaved_dataloaders
 from pyg.training_met import override_config
@@ -124,10 +123,10 @@ def main():
         torch.cuda.empty_cache()
 
         rank = 0
-        _logger.info(f"Will use single-gpu: {torch.cuda.get_device_name(rank)}", color="purple")
+        print(f"Will use single-gpu: {torch.cuda.get_device_name(rank)}")
     else:
         rank = "cpu"
-        _logger.info("Will use cpu", color="purple")
+        print("Will use cpu")
 
     loaddir = "/pfvol/experiments/MLPF_clic_A100_1gpu_pyg-clic_20240322_233518_004447"
 
@@ -212,7 +211,7 @@ def main():
         if not os.path.exists(outpath):
             os.makedirs(outpath)
 
-        _logger.info(f"Will process the {mode} files")
+        print(f"Will process the {mode} files")
         for ibatch, batch in enumerate(loaders[mode]):
 
             # run the MLPF model in inference mode to get the MLPF cands / latent representations
