@@ -336,5 +336,5 @@ def main():
 
 
 if __name__ == "__main__":
-    # noqa: python mlpf/clic_jetdataset_builder.py --dataset clic --data-dir tensorflow_datasets --config parameters/pytorch/pyg-clic-ttbar.yaml --num-workers 4 --prefetch-factor 20 --gpu-batch-multiplier 100 --save-every-X-batch 2
+    # noqa: python mlpf/clic_jetdataset_builder.py --dataset clic --data-dir tensorflow_datasets --config parameters/pytorch/pyg-clic-ttbar.yaml --num-workers 2 --prefetch-factor 2 --gpu-batch-multiplier 1000 --save-every-X-batch 5
     main()

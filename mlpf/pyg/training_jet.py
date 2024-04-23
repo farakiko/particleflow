@@ -70,89 +70,39 @@ def train_and_valid(
 
     loss = {}  # this one is redefined every iteration
 
-    if use_latentX:  # must set forward hooks to retrieve the intermediate latent representations
-        latent_reps = {}
-
-        def get_latent_reps(name):
-            def hook(mlpf, input, output):
-                latent_reps[name] = output.detach()
-
-            return hook
-
-        mlpf.conv_reg[0].dropout.register_forward_hook(get_latent_reps("conv_reg0"))
-        mlpf.conv_reg[1].dropout.register_forward_hook(get_latent_reps("conv_reg1"))
-        mlpf.conv_reg[2].dropout.register_forward_hook(get_latent_reps("conv_reg2"))
-        mlpf.nn_id.register_forward_hook(get_latent_reps("nn_id"))
-
     for itrain, batch in iterator:
 
         batch = batch.to(rank, non_blocking=True)
         ygen = unpack_target(batch.ygen)
 
-        # run the MLPF model in inference mode to get the MLPF cands / latent representations
-        for i in range(5):
-            with torch.no_grad():
-                with torch.autocast(device_type="cuda", dtype=torch.bfloat16, enabled=True):
-                    ymlpf = mlpf(batch.X, batch.mask)
-        ymlpf = unpack_predictions(ymlpf)
-
-        msk_ymlpf = ymlpf["cls_id"] != 0
-        pred_px = (ymlpf["pt"] * ymlpf["cos_phi"]) * msk_ymlpf
-        pred_py = (ymlpf["pt"] * ymlpf["sin_phi"]) * msk_ymlpf
-
-        if use_latentX:  # use the latent representations
-            for layer in latent_reps:
-                if "conv" in layer:
-                    latent_reps[layer] *= batch.mask.unsqueeze(-1)
-
-            X = torch.cat(
-                [
-                    batch.X,  # 17
-                    latent_reps["conv_reg0"],  # 256
-                    latent_reps["conv_reg1"],  # 256
-                    latent_reps["conv_reg2"],  # 256
-                    latent_reps["nn_id"],  # 6
-                ],
-                axis=-1,
-            )
-
-        else:  # use the MLPF cands
-            # p4_masked = ymlpf["momentum"] * msk_ymlpf.unsqueeze(-1)
-            # X = torch.cat([p4_masked, ymlpf["cls_id_onehot"], ymlpf["charge"]], axis=-1)
-            X = torch.cat([ymlpf["momentum"], ymlpf["cls_id_onehot"], ymlpf["charge"]], axis=-1)
+        if use_latentX:
+            X = batch["mlpfcands_latentX"]
+        else:
+            X = torch.cat([batch["mlpfcands_momentum"], batch["mlpfcands_pid"], batch["mlpfcands_charge"]], axis=-1)
 
         assert X.requires_grad is False, "The MLPF model must be frozen."
 
+        # define the model (JET model)
         if is_train:
             wx, wy = deepmet(X)
         else:
             with torch.no_grad():
                 wx, wy = deepmet(X)
 
-        pred_met_x = torch.sum(wx * pred_px, axis=1)
-        pred_met_y = torch.sum(wy * pred_py, axis=1)
+        # define the loss
+        ptcorr = model(X, batch.batch).squeeze(1)
 
-        # genMET to compute the loss
-        msk_gen = ygen["cls_id"] != 0
-        gen_px = (ygen["pt"] * ygen["cos_phi"]) * msk_gen
-        gen_py = (ygen["pt"] * ygen["sin_phi"]) * msk_gen
-
-        true_met_x = torch.sum(gen_px, axis=1)
-        true_met_y = torch.sum(gen_py, axis=1)
+        target = torch.log(batch["gen_jet_pt"] / batch["reco_jet_pt"])
 
         if is_train:
-            loss["MET"] = torch.nn.functional.huber_loss(true_met_x, pred_met_x) + torch.nn.functional.huber_loss(
-                true_met_y, pred_met_y
-            )
+            loss = torch.nn.functional.huber_loss(target, ptcorr)
             for param in deepmet.parameters():
                 param.grad = None
             loss["MET"].backward()
             optimizer.step()
         else:
             with torch.no_grad():
-                loss["MET"] = torch.nn.functional.huber_loss(true_met_x, pred_met_x) + torch.nn.functional.huber_loss(
-                    true_met_y, pred_met_y
-                )
+                loss = torch.nn.functional.huber_loss(target, ptcorr)
 
         # monitor the MLPF (and PF) MET loss
         with torch.no_grad():
