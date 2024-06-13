@@ -1,12 +1,13 @@
-import numpy as np
-import awkward
-import uproot
-import vector
 import glob
+import multiprocessing
 import os
 import sys
-import multiprocessing
+
+import awkward
+import numpy as np
 import tqdm
+import uproot
+import vector
 from scipy.sparse import coo_matrix
 
 track_coll = "SiTracks_Refitted"
@@ -874,8 +875,8 @@ def process_one_file(fn, ofn):
 
 
 def process_sample(sample):
-    inp = "/local/joosep/cld_edm4hep/2024_05_full/"
-    outp = "/local/joosep/mlpf/cld_edm4hep/2024_05/"
+    inp = "/pfvol/cld_edm4hep/2024_05_full/"
+    outp = "/pfvol/cld_edm4hep/2024_05/"
 
     pool = multiprocessing.Pool(4)
 
