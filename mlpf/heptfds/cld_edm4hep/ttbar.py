@@ -28,11 +28,6 @@ class ClicEdmTtbarPf(tfds.core.GeneratorBasedBuilder):
     VERSION = tfds.core.Version("1.5.0")
     RELEASE_NOTES = {
         "1.0.0": "Initial release.",
-        "1.1.0": "update stats, move to 380 GeV",
-        "1.2.0": "sin/cos phi separately",
-        "1.3.0": "Update stats to ~1M events",
-        "1.4.0": "Fix ycand matching",
-        "1.5.0": "Regenerate with ARRAY_RECORD",
     }
     MANUAL_DOWNLOAD_INSTRUCTIONS = """
     For the raw input files in ROOT EDM4HEP format, please see the citation above.
