@@ -890,6 +890,7 @@ def process_sample(sample):
     #    of = inf.replace(inpath_samp, outpath_samp).replace(".root", ".parquet")
     #    process_one_file(inf, of)
     args = []
+    print("lol")
     for inf in infiles:
         print("inf", inf)
         of = inf.replace(inpath_samp, outpath_samp).replace(".root", ".parquet")
