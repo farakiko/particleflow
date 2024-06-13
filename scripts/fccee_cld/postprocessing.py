@@ -891,6 +891,7 @@ def process_sample(sample):
     #    process_one_file(inf, of)
     args = []
     for inf in infiles:
+        print("inf", inf)
         of = inf.replace(inpath_samp, outpath_samp).replace(".root", ".parquet")
         args.append((inf, of))
     pool.starmap(process_one_file, args)
