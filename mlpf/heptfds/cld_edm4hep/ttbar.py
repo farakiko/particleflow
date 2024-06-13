@@ -24,7 +24,7 @@ Zenodo. https://doi.org/10.5281/zenodo.8260741
 """
 
 
-class ClicEdmTtbarPf(tfds.core.GeneratorBasedBuilder):
+class CldEdmTtbarPf(tfds.core.GeneratorBasedBuilder):
     VERSION = tfds.core.Version("1.0.0")
     RELEASE_NOTES = {
         "1.0.0": "Initial release.",
@@ -38,7 +38,7 @@ class ClicEdmTtbarPf(tfds.core.GeneratorBasedBuilder):
 
     def __init__(self, *args, **kwargs):
         kwargs["file_format"] = tfds.core.FileFormat.ARRAY_RECORD
-        super(ClicEdmTtbarPf, self).__init__(*args, **kwargs)
+        super(CldEdmTtbarPf, self).__init__(*args, **kwargs)
 
     def _info(self) -> tfds.core.DatasetInfo:
         """Returns the dataset metadata."""
