@@ -1,11 +1,11 @@
 import json
+import logging
 import pickle as pkl
 
 import pandas as pd
 import torch
 import torch.utils.data
-from torch.optim.lr_scheduler import OneCycleLR, CosineAnnealingLR, ConstantLR
-import logging
+from torch.optim.lr_scheduler import ConstantLR, CosineAnnealingLR, OneCycleLR
 
 # https://github.com/ahlinist/cmssw/blob/1df62491f48ef964d198f574cdfcccfd17c70425/DataFormats/ParticleFlowReco/interface/PFBlockElement.h#L33
 # https://github.com/cms-sw/cmssw/blob/master/DataFormats/ParticleFlowCandidate/src/PFCandidate.cc#L254
@@ -162,7 +162,9 @@ def unpack_target(y):
 
     # note ~ momentum = ["pt", "eta", "sin_phi", "cos_phi", "energy"]
     ret["momentum"] = y[..., 2:7].to(dtype=torch.float32)
-    ret["p4"] = torch.cat([ret["pt"].unsqueeze(-1), ret["eta"].unsqueeze(-1), ret["phi"].unsqueeze(-1), ret["energy"].unsqueeze(-1)], axis=-1)
+    ret["p4"] = torch.cat(
+        [ret["pt"].unsqueeze(-1), ret["eta"].unsqueeze(-1), ret["phi"].unsqueeze(-1), ret["energy"].unsqueeze(-1)], axis=-1
+    )
 
     ret["ispu"] = y[..., -1]
 
@@ -171,7 +173,7 @@ def unpack_target(y):
 
 def unpack_predictions(preds):
     ret = {}
-    ret["cls_binary"], ret["cls_id_onehot"], ret["momentum"] = preds
+    ret["cls_id_onehot"], ret["momentum"] = preds
     # ret["cls_id_onehot"], ret["momentum"] = preds
 
     # ret["charge"] = torch.argmax(ret["charge"], axis=1, keepdim=True) - 1
@@ -183,13 +185,8 @@ def unpack_predictions(preds):
     ret["cos_phi"] = ret["momentum"][..., 3]
     ret["energy"] = ret["momentum"][..., 4]
 
-    # first get the cases where a particle was predicted
-    ret["cls_id"] = torch.argmax(ret["cls_binary"], axis=-1)
-    # when a particle was predicted, get the particle ID
-    ret["cls_id"][ret["cls_id"] == 1] = torch.argmax(ret["cls_id_onehot"], axis=-1)[ret["cls_id"] == 1]
-
     # get the predicted particle ID
-    # ret["cls_id"] = torch.argmax(ret["cls_id_onehot"], axis=-1)
+    ret["cls_id"] = torch.argmax(ret["cls_id_onehot"], axis=-1)
 
     # particle properties
     ret["phi"] = torch.atan2(ret["sin_phi"], ret["cos_phi"])
@@ -283,7 +280,11 @@ def load_lr_schedule(lr_schedule, checkpoint):
         lr_schedule.load_state_dict(checkpoint["extra_state"]["lr_schedule_state_dict"])
         return lr_schedule
     else:
-        raise KeyError("Couldn't find LR schedule state dict in checkpoint. extra_state contains: {}".format(checkpoint["extra_state"].keys()))
+        raise KeyError(
+            "Couldn't find LR schedule state dict in checkpoint. extra_state contains: {}".format(
+                checkpoint["extra_state"].keys()
+            )
+        )
 
 
 def get_lr_schedule(config, opt, epochs=None, steps_per_epoch=None, last_epoch=-1):

@@ -1,10 +1,9 @@
 import torch
 import torch.nn as nn
+from pyg.logger import _logger
+from torch.nn.attention import SDPBackend, sdpa_kernel
 
 from .gnn_lsh import CombinedGraphLayer
-
-from torch.nn.attention import SDPBackend, sdpa_kernel
-from pyg.logger import _logger
 
 
 def get_activation(activation):
@@ -47,7 +46,9 @@ class SelfAttentionLayer(nn.Module):
             self.mha = torch.nn.MultiheadAttention(embedding_dim, num_heads, dropout=dropout_mha, batch_first=True)
         self.norm0 = torch.nn.LayerNorm(embedding_dim)
         self.norm1 = torch.nn.LayerNorm(embedding_dim)
-        self.seq = torch.nn.Sequential(nn.Linear(embedding_dim, width), self.act(), nn.Linear(width, embedding_dim), self.act())
+        self.seq = torch.nn.Sequential(
+            nn.Linear(embedding_dim, width), self.act(), nn.Linear(width, embedding_dim), self.act()
+        )
         self.dropout = torch.nn.Dropout(dropout_ff)
         _logger.info("using attention_type={}".format(attention_type))
         # params for torch sdp_kernel
@@ -103,7 +104,9 @@ class PreLnSelfAttentionLayer(nn.Module):
             self.mha = torch.nn.MultiheadAttention(embedding_dim, num_heads, dropout=dropout_mha, batch_first=True)
         self.norm0 = torch.nn.LayerNorm(embedding_dim)
         self.norm1 = torch.nn.LayerNorm(embedding_dim)
-        self.seq = torch.nn.Sequential(nn.Linear(embedding_dim, width), self.act(), nn.Linear(width, embedding_dim), self.act())
+        self.seq = torch.nn.Sequential(
+            nn.Linear(embedding_dim, width), self.act(), nn.Linear(width, embedding_dim), self.act()
+        )
         self.dropout = torch.nn.Dropout(dropout_ff)
         _logger.info("using attention_type={}".format(attention_type))
         # params for torch sdp_kernel
@@ -147,7 +150,9 @@ class MambaLayer(nn.Module):
             expand=expand,
         )
         self.norm0 = torch.nn.LayerNorm(embedding_dim)
-        self.seq = torch.nn.Sequential(nn.Linear(embedding_dim, width), self.act(), nn.Linear(width, embedding_dim), self.act())
+        self.seq = torch.nn.Sequential(
+            nn.Linear(embedding_dim, width), self.act(), nn.Linear(width, embedding_dim), self.act()
+        )
         self.dropout = torch.nn.Dropout(dropout)
 
     def forward(self, x, mask):
@@ -344,7 +349,6 @@ class MLPF(nn.Module):
             decoding_dim = self.input_dim + embedding_dim
 
         # DNN that acts on the node level to predict the PID
-        self.nn_binary_particle = ffn(decoding_dim, 2, width, self.act, dropout_ff)
         self.nn_pid = ffn(decoding_dim, num_classes, width, self.act, dropout_ff)
 
         # elementwise DNN for node momentum regression
@@ -395,7 +399,6 @@ class MLPF(nn.Module):
         if self.use_pre_layernorm:
             final_embedding_id = self.final_norm_id(final_embedding_id)
 
-        preds_binary_particle = self.nn_binary_particle(final_embedding_id)
         preds_pid = self.nn_pid(final_embedding_id)
 
         # pred_charge = self.nn_charge(final_embedding_id)
@@ -417,4 +420,4 @@ class MLPF(nn.Module):
         preds_energy = self.nn_energy(X_features, final_embedding_reg, X_features[..., 5:6])
         preds_momentum = torch.cat([preds_pt, preds_eta, preds_sin_phi, preds_cos_phi, preds_energy], axis=-1)
 
-        return preds_binary_particle, preds_pid, preds_momentum
+        return preds_pid, preds_momentum

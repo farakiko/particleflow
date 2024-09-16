@@ -1,53 +1,52 @@
+import csv
+import json
+import logging
 import os
 import os.path as osp
 import pickle as pkl
+import shutil
 import time
+from datetime import datetime
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Optional
-import logging
-import shutil
-from datetime import datetime
-import tqdm
-import yaml
-import csv
-import json
-import sklearn
-import sklearn.metrics
+
+import fastjet
 import numpy as np
 import pandas
-
-# comet needs to be imported before torch
-from comet_ml import OfflineExperiment, Experiment  # noqa: F401, isort:skip
+import sklearn
+import sklearn.metrics
 import torch
 import torch.distributed as dist
 import torch.multiprocessing as mp
+import tqdm
+import yaml
+from pyg.inference import make_plots, run_predictions
+from pyg.logger import _configLogger, _logger
+from pyg.mlpf import MLPF
+from pyg.PFDataset import Collater, PFDataset, get_interleaved_dataloaders
+from pyg.utils import (
+    CLASS_LABELS,
+    ELEM_TYPES_NONZERO,
+    X_FEATURES,
+    count_parameters,
+    get_lr_schedule,
+    get_model_state_dict,
+    load_checkpoint,
+    save_checkpoint,
+    save_HPs,
+    unpack_predictions,
+    unpack_target,
+)
 from torch import Tensor, nn
 from torch.nn import functional as F
 from torch.profiler import ProfilerActivity, profile, record_function
 from torch.utils.tensorboard import SummaryWriter
-
-from pyg.logger import _logger, _configLogger
-from pyg.utils import (
-    unpack_predictions,
-    unpack_target,
-    get_model_state_dict,
-    load_checkpoint,
-    save_checkpoint,
-    CLASS_LABELS,
-    X_FEATURES,
-    ELEM_TYPES_NONZERO,
-    save_HPs,
-    get_lr_schedule,
-    count_parameters,
-)
-
-
-import fastjet
-from pyg.inference import make_plots, run_predictions
-from pyg.mlpf import MLPF
-from pyg.PFDataset import Collater, PFDataset, get_interleaved_dataloaders
 from utils import create_comet_experiment
+
+# comet needs to be imported before torch
+from comet_ml import OfflineExperiment, Experiment  # noqa: F401, isort:skip
+
 
 # Ignore divide by 0 errors
 np.seterr(divide="ignore", invalid="ignore")
@@ -88,11 +87,7 @@ def mlpf_loss(y, ypred, batch):
     y["momentum"] = y["momentum"] * msk_true_particle
 
     # in case of the 3D-padded mode, pytorch expects (batch, num_classes, ...)
-    ypred["cls_binary"] = ypred["cls_binary"].permute((0, 2, 1))
     ypred["cls_id_onehot"] = ypred["cls_id_onehot"].permute((0, 2, 1))
-
-    # binary loss for particle / no-particle classification
-    loss_binary_classification = 100 * loss_obj_id(ypred["cls_binary"], (y["cls_id"] != 0).long()).reshape(y["cls_id"].shape)
 
     # compare the particle type, only for cases where there was a true particle
     loss_pid_classification = 100 * loss_obj_id(ypred["cls_id_onehot"], y["cls_id"]).reshape(y["cls_id"].shape)
@@ -103,12 +98,10 @@ def mlpf_loss(y, ypred, batch):
     loss_regression[y["cls_id"] == 0] *= 0
 
     # set the loss to 0 on padded elements in the batch
-    loss_binary_classification[batch.mask == 0] *= 0
     loss_pid_classification[batch.mask == 0] *= 0
     loss_regression[batch.mask == 0] *= 0
 
     # average over all elements that were not padded
-    loss["Classification_binary"] = loss_binary_classification.sum() / nelem
     loss["Classification"] = loss_pid_classification.sum() / nelem
 
     # normalize loss with stddev to stabilize across batches with very different pt, E distributions
@@ -119,33 +112,10 @@ def mlpf_loss(y, ypred, batch):
     # loss["Regression"] = (reg_losses / mom_normalizer).sum() / npart
     loss["Regression"] = reg_losses.sum() / npart
 
-    # in case we are using the 3D-padded mode, we can compute a few additional event-level monitoring losses
-    msk_pred_particle = torch.unsqueeze(torch.argmax(ypred["cls_binary"].detach(), axis=1) != 0, axis=-1)
-    # pt * cos_phi
-    px = ypred["momentum"][..., 0:1].detach() * ypred["momentum"][..., 3:4].detach() * msk_pred_particle
-    # pt * sin_phi
-    py = ypred["momentum"][..., 0:1].detach() * ypred["momentum"][..., 2:3].detach() * msk_pred_particle
-    # sum across events
-    pred_met = torch.sum(px, axis=-2) ** 2 + torch.sum(py, axis=-2) ** 2
+    loss["Total"] = loss["Classification"] + loss["Regression"]  # + 0.01 * loss["Sliced_Wasserstein_Loss"]
 
-    loss["MET"] = torch.nn.functional.huber_loss(pred_met.squeeze(dim=-1), batch.genmet).mean()
-
-    was_input_pred = torch.concat([torch.softmax(ypred["cls_binary"].transpose(1, 2), axis=-1), ypred["momentum"]], axis=-1) * batch.mask.unsqueeze(
-        axis=-1
-    )
-    was_input_true = torch.concat([torch.nn.functional.one_hot((y["cls_id"] != 0).to(torch.long)), y["momentum"]], axis=-1) * batch.mask.unsqueeze(
-        axis=-1
-    )
-
-    std = was_input_true[batch.mask].std(axis=0)
-    loss["Sliced_Wasserstein_Loss"] = sliced_wasserstein_loss(was_input_pred / std, was_input_true / std).mean()
-
-    loss["Total"] = loss["Classification_binary"] + loss["Classification"] + loss["Regression"]  # + 0.01 * loss["Sliced_Wasserstein_Loss"]
-
-    loss["Classification_binary"] = loss["Classification_binary"].detach()
     loss["Classification"] = loss["Classification"].detach()
     loss["Regression"] = loss["Regression"].detach()
-    loss["Sliced_Wasserstein_Loss"] = loss["Sliced_Wasserstein_Loss"].detach()
     return loss
 
 
@@ -161,7 +131,9 @@ class FocalLoss(nn.Module):
         - y: (batch_size,) or (batch_size, d1, d2, ..., dK), K > 0.
     """
 
-    def __init__(self, alpha: Optional[Tensor] = None, gamma: float = 0.0, reduction: str = "mean", ignore_index: int = -100):
+    def __init__(
+        self, alpha: Optional[Tensor] = None, gamma: float = 0.0, reduction: str = "mean", ignore_index: int = -100
+    ):
         """Constructor.
         Args:
             alpha (Tensor, optional): Weights for each class. Defaults to None.
@@ -278,7 +250,9 @@ def train_and_valid(
     if (world_size > 1) and (rank != 0):
         iterator = enumerate(data_loader)
     else:
-        iterator = tqdm.tqdm(enumerate(data_loader), total=len(data_loader), desc=f"Epoch {epoch} {train_or_valid} loop on rank={rank}")
+        iterator = tqdm.tqdm(
+            enumerate(data_loader), total=len(data_loader), desc=f"Epoch {epoch} {train_or_valid} loop on rank={rank}"
+        )
 
     device_type = "cuda" if isinstance(rank, int) else "cpu"
 
@@ -309,19 +283,31 @@ def train_and_valid(
 
         if not is_train:
             cm_X_gen += sklearn.metrics.confusion_matrix(
-                batch.X[:, :, 0][batch.mask].detach().cpu().numpy(), ygen["cls_id"][batch.mask].detach().cpu().numpy(), labels=range(13)
+                batch.X[:, :, 0][batch.mask].detach().cpu().numpy(),
+                ygen["cls_id"][batch.mask].detach().cpu().numpy(),
+                labels=range(13),
             )
             cm_X_pred += sklearn.metrics.confusion_matrix(
-                batch.X[:, :, 0][batch.mask].detach().cpu().numpy(), ypred["cls_id"][batch.mask].detach().cpu().numpy(), labels=range(13)
+                batch.X[:, :, 0][batch.mask].detach().cpu().numpy(),
+                ypred["cls_id"][batch.mask].detach().cpu().numpy(),
+                labels=range(13),
             )
             cm_id += sklearn.metrics.confusion_matrix(
-                ygen["cls_id"][batch.mask].detach().cpu().numpy(), ypred["cls_id"][batch.mask].detach().cpu().numpy(), labels=range(13)
+                ygen["cls_id"][batch.mask].detach().cpu().numpy(),
+                ypred["cls_id"][batch.mask].detach().cpu().numpy(),
+                labels=range(13),
             )
             # save the events of the first validation batch for quick checks
             if itrain == 0:
                 arr = (
                     torch.concatenate(
-                        [batch.X[batch.mask], batch.ygen[batch.mask], ypred_raw[0][batch.mask], ypred_raw[1][batch.mask], ypred_raw[2][batch.mask]],
+                        [
+                            batch.X[batch.mask],
+                            batch.ygen[batch.mask],
+                            ypred_raw[0][batch.mask],
+                            ypred_raw[1][batch.mask],
+                            ypred_raw[2][batch.mask],
+                        ],
                         axis=-1,
                     )
                     .detach()
@@ -428,10 +414,20 @@ def train_and_valid(
 
     if not is_train and comet_experiment:
         comet_experiment.log_confusion_matrix(
-            matrix=cm_X_gen, title="Element to target", row_label="X", column_label="target", epoch=epoch, file_name="cm_X_gen.json"
+            matrix=cm_X_gen,
+            title="Element to target",
+            row_label="X",
+            column_label="target",
+            epoch=epoch,
+            file_name="cm_X_gen.json",
         )
         comet_experiment.log_confusion_matrix(
-            matrix=cm_X_pred, title="Element to pred", row_label="X", column_label="pred", epoch=epoch, file_name="cm_X_pred.json"
+            matrix=cm_X_pred,
+            title="Element to pred",
+            row_label="X",
+            column_label="pred",
+            epoch=epoch,
+            file_name="cm_X_pred.json",
         )
         comet_experiment.log_confusion_matrix(
             matrix=cm_id, title="Target to pred", row_label="gen", column_label="pred", epoch=epoch, file_name="cm_id.json"
@@ -495,7 +491,7 @@ def train_mlpf(
 
     t0_initial = time.time()
 
-    losses_of_interest = ["Total", "Classification", "Classification_binary", "Regression"]
+    losses_of_interest = ["Total", "Classification", "Regression"]
 
     losses = {}
     losses["train"], losses["valid"] = {}, {}
@@ -509,7 +505,9 @@ def train_mlpf(
 
         # training step, edit here to profile a specific epoch
         if epoch == -1:
-            with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA], record_shapes=True, with_stack=True) as prof:
+            with profile(
+                activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA], record_shapes=True, with_stack=True
+            ) as prof:
                 with record_function("model_train"):
                     losses_t = train_and_valid(
                         rank,
@@ -760,7 +758,9 @@ def run(rank, world_size, config, args, outdir, logfile):
             _logger.info(f"Model directory {outdir}", color="bold")
 
         if args.comet:
-            comet_experiment = create_comet_experiment(config["comet_name"], comet_offline=config["comet_offline"], outdir=outdir)
+            comet_experiment = create_comet_experiment(
+                config["comet_name"], comet_offline=config["comet_offline"], outdir=outdir
+            )
             comet_experiment.set_name(f"rank_{rank}_{Path(outdir).name}")
             comet_experiment.log_parameter("run_id", Path(outdir).name)
             comet_experiment.log_parameter("world_size", world_size)
@@ -996,7 +996,9 @@ def train_ray_trial(config, args, outdir=None):
     loaders = get_interleaved_dataloaders(world_size, rank, config, use_cuda, use_ray=True)
 
     if args.comet:
-        comet_experiment = create_comet_experiment(config["comet_name"], comet_offline=config["comet_offline"], outdir=outdir)
+        comet_experiment = create_comet_experiment(
+            config["comet_name"], comet_offline=config["comet_offline"], outdir=outdir
+        )
         comet_experiment.set_name(f"world_rank_{world_rank}_{Path(outdir).name}")
         comet_experiment.log_parameter("run_id", Path(outdir).name)
         comet_experiment.log_parameter("world_size", world_size)
@@ -1030,7 +1032,9 @@ def train_ray_trial(config, args, outdir=None):
                 if args.resume_training:
                     model, optimizer = load_checkpoint(checkpoint, model, optimizer)
                     start_epoch = checkpoint["extra_state"]["epoch"] + 1
-                    lr_schedule = get_lr_schedule(config, optimizer, config["num_epochs"], steps_per_epoch, last_epoch=start_epoch - 1)
+                    lr_schedule = get_lr_schedule(
+                        config, optimizer, config["num_epochs"], steps_per_epoch, last_epoch=start_epoch - 1
+                    )
                 else:  # start a new training with model weights loaded from a pre-trained model
                     model = load_checkpoint(checkpoint, model)
 
@@ -1145,7 +1149,6 @@ def run_hpo(config, args):
     import ray
     from ray import tune
     from ray.train.torch import TorchTrainer
-
     from raytune.pt_search_space import raytune_num_samples, search_space
     from raytune.utils import get_raytune_schedule, get_raytune_search_alg
 
@@ -1194,7 +1197,9 @@ def run_hpo(config, args):
 
     if tune.Tuner.can_restore(str(expdir)):
         # resume unfinished HPO run
-        tuner = tune.Tuner.restore(str(expdir), trainable=trainer, resume_errored=True, restart_errored=False, resume_unfinished=True)
+        tuner = tune.Tuner.restore(
+            str(expdir), trainable=trainer, resume_errored=True, restart_errored=False, resume_unfinished=True
+        )
     else:
         # start new HPO run
         search_space = {"train_loop_config": search_space}  # the ray TorchTrainer only takes a single arg: train_loop_config
@@ -1235,4 +1240,6 @@ def run_hpo(config, args):
     print(result_df.columns)
 
     logging.info("Total time of Tuner.fit(): {}".format(end - start))
-    logging.info("Best hyperparameters found according to {} were: {}".format(config["raytune"]["default_metric"], best_config))
+    logging.info(
+        "Best hyperparameters found according to {} were: {}".format(config["raytune"]["default_metric"], best_config)
+    )
