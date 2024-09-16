@@ -306,7 +306,6 @@ def train_and_valid(
                             batch.ygen[batch.mask],
                             ypred_raw[0][batch.mask],
                             ypred_raw[1][batch.mask],
-                            ypred_raw[2][batch.mask],
                         ],
                         axis=-1,
                     )
