@@ -160,8 +160,8 @@ class MambaLayer(nn.Module):
         return x
 
 
-def ffn(input_dim, output_dim, width, act, dropout, use_ffn_opt=False):
-    if use_ffn_opt:
+def ffn(input_dim, output_dim, width, act, dropout, use_improved_ffn=False):
+    if use_improved_ffn:
         return nn.Sequential(
             nn.Linear(input_dim, width),
             torch.nn.LayerNorm(width),
@@ -181,20 +181,20 @@ def ffn(input_dim, output_dim, width, act, dropout, use_ffn_opt=False):
 
 
 class RegressionOutput(nn.Module):
-    def __init__(self, mode, embed_dim, width, act, dropout, elemtypes, use_ffn_opt=False):
+    def __init__(self, mode, embed_dim, width, act, dropout, elemtypes, use_improved_ffn=False):
         super(RegressionOutput, self).__init__()
         self.mode = mode
         self.elemtypes = elemtypes
 
         # single output
         if self.mode == "direct" or self.mode == "additive" or self.mode == "multiplicative":
-            self.nn = ffn(embed_dim, 1, width, act, dropout, use_ffn_opt)
+            self.nn = ffn(embed_dim, 1, width, act, dropout, use_improved_ffn)
         # two outputs
         elif self.mode == "linear":
-            self.nn = ffn(embed_dim, 2, width, act, dropout, use_ffn_opt)
+            self.nn = ffn(embed_dim, 2, width, act, dropout, use_improved_ffn)
         elif self.mode == "linear-elemtype":
-            self.nn1 = ffn(embed_dim, len(self.elemtypes), width, act, dropout, use_ffn_opt)
-            self.nn2 = ffn(embed_dim, len(self.elemtypes), width, act, dropout, use_ffn_opt)
+            self.nn1 = ffn(embed_dim, len(self.elemtypes), width, act, dropout, use_improved_ffn)
+            self.nn2 = ffn(embed_dim, len(self.elemtypes), width, act, dropout, use_improved_ffn)
 
     def forward(self, elems, x, orig_value):
 
@@ -364,19 +364,19 @@ class MLPF(nn.Module):
         # elementwise DNN for node momentum regression
         embed_dim = decoding_dim
         self.nn_pt = RegressionOutput(
-            pt_mode, embed_dim, width, self.act, dropout_ff, self.elemtypes_nonzero, self.use_ffn_opt
+            pt_mode, embed_dim, width, self.act, dropout_ff, self.elemtypes_nonzero, self.use_improved_ffn
         )
         self.nn_eta = RegressionOutput(
-            eta_mode, embed_dim, width, self.act, dropout_ff, self.elemtypes_nonzero, self.use_ffn_opt
+            eta_mode, embed_dim, width, self.act, dropout_ff, self.elemtypes_nonzero, self.use_improved_ffn
         )
         self.nn_sin_phi = RegressionOutput(
-            sin_phi_mode, embed_dim, width, self.act, dropout_ff, self.elemtypes_nonzero, self.use_ffn_opt
+            sin_phi_mode, embed_dim, width, self.act, dropout_ff, self.elemtypes_nonzero, self.use_improved_ffn
         )
         self.nn_cos_phi = RegressionOutput(
-            cos_phi_mode, embed_dim, width, self.act, dropout_ff, self.elemtypes_nonzero, self.use_ffn_opt
+            cos_phi_mode, embed_dim, width, self.act, dropout_ff, self.elemtypes_nonzero, self.use_improved_ffn
         )
         self.nn_energy = RegressionOutput(
-            energy_mode, embed_dim, width, self.act, dropout_ff, self.elemtypes_nonzero, self.use_ffn_opt
+            energy_mode, embed_dim, width, self.act, dropout_ff, self.elemtypes_nonzero, self.use_improved_ffn
         )
 
     # @torch.compile
