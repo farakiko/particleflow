@@ -423,9 +423,6 @@ class MLPF(nn.Module):
         elif self.learned_representation_mode == "last":
             final_embedding_reg = torch.cat([Xfeat_normed] + [embeddings_reg[-1]], axis=-1)
 
-        if self.use_pre_layernorm:
-            final_embedding_reg = self.final_norm_reg(final_embedding_reg)
-
         # The PFElement feature order in X_features defined in fcc/postprocessing.py
         preds_pt = self.nn_pt(X_features, final_embedding_reg, X_features[..., 1:2])
         preds_eta = self.nn_eta(X_features, final_embedding_reg, X_features[..., 2:3])
