@@ -116,7 +116,7 @@ def mlpf_loss(y, ypred, batch):
 
     # average over all true particles
     # loss["Regression"] = (reg_losses / mom_normalizer).sum() / npart
-    loss["Regression"] = 0.1 * reg_losses.sum() / npart
+    loss["Regression"] = reg_losses.sum() / npart
 
     # in case we are using the 3D-padded mode, we can compute a few additional event-level monitoring losses
     msk_pred_particle = torch.unsqueeze(torch.argmax(ypred["cls_binary"].detach(), axis=1) != 0, axis=-1)
