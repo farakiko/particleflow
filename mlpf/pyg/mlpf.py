@@ -1,10 +1,9 @@
 import torch
 import torch.nn as nn
+from pyg.logger import _logger
+from torch.nn.attention import SDPBackend, sdpa_kernel
 
 from .gnn_lsh import CombinedGraphLayer
-
-from torch.nn.attention import SDPBackend, sdpa_kernel
-from pyg.logger import _logger
 
 
 def get_activation(activation):
@@ -47,7 +46,9 @@ class SelfAttentionLayer(nn.Module):
             self.mha = torch.nn.MultiheadAttention(embedding_dim, num_heads, dropout=dropout_mha, batch_first=True)
         self.norm0 = torch.nn.LayerNorm(embedding_dim)
         self.norm1 = torch.nn.LayerNorm(embedding_dim)
-        self.seq = torch.nn.Sequential(nn.Linear(embedding_dim, width), self.act(), nn.Linear(width, embedding_dim), self.act())
+        self.seq = torch.nn.Sequential(
+            nn.Linear(embedding_dim, width), self.act(), nn.Linear(width, embedding_dim), self.act()
+        )
         self.dropout = torch.nn.Dropout(dropout_ff)
         _logger.info("using attention_type={}".format(attention_type))
         # params for torch sdp_kernel
@@ -77,7 +78,7 @@ class SelfAttentionLayer(nn.Module):
         return x
 
 
-class PreLnSelfAttentionLayer(nn.Module):
+class SelfAttentionLayer_opt(nn.Module):
     def __init__(
         self,
         activation="elu",
@@ -88,7 +89,7 @@ class PreLnSelfAttentionLayer(nn.Module):
         dropout_ff=0.1,
         attention_type="efficient",
     ):
-        super(PreLnSelfAttentionLayer, self).__init__()
+        super(SelfAttentionLayer_opt, self).__init__()
 
         # to enable manual override for ONNX export
         self.enable_ctx_manager = True
@@ -103,7 +104,7 @@ class PreLnSelfAttentionLayer(nn.Module):
             self.mha = torch.nn.MultiheadAttention(embedding_dim, num_heads, dropout=dropout_mha, batch_first=True)
         self.norm0 = torch.nn.LayerNorm(embedding_dim)
         self.norm1 = torch.nn.LayerNorm(embedding_dim)
-        self.seq = torch.nn.Sequential(nn.Linear(embedding_dim, width), self.act(), nn.Linear(width, embedding_dim), self.act())
+        self.seq = torch.nn.Sequential(nn.Linear(embedding_dim, width), self.act(), nn.Linear(width, embedding_dim))
         self.dropout = torch.nn.Dropout(dropout_ff)
         _logger.info("using attention_type={}".format(attention_type))
         # params for torch sdp_kernel
@@ -114,8 +115,6 @@ class PreLnSelfAttentionLayer(nn.Module):
         }
 
     def forward(self, x, mask):
-        x = self.norm0(x)
-
         # explicitly call the desired attention mechanism
         if self.attention_type == "flash_external":
             mha_out = self.mha(x)
@@ -126,9 +125,10 @@ class PreLnSelfAttentionLayer(nn.Module):
             else:
                 mha_out = self.mha(x, x, x, need_weights=False)[0]
 
-        mha_out = x + mha_out
-        x = self.norm1(mha_out)
-        x = mha_out + self.seq(x)
+        x = x + mha_out
+        x = self.norm0(x)
+        x = x + self.seq(x)
+        x = self.norm1(x)
         x = self.dropout(x)
         x = x * mask.unsqueeze(-1)
         return x
@@ -147,7 +147,9 @@ class MambaLayer(nn.Module):
             expand=expand,
         )
         self.norm0 = torch.nn.LayerNorm(embedding_dim)
-        self.seq = torch.nn.Sequential(nn.Linear(embedding_dim, width), self.act(), nn.Linear(width, embedding_dim), self.act())
+        self.seq = torch.nn.Sequential(
+            nn.Linear(embedding_dim, width), self.act(), nn.Linear(width, embedding_dim), self.act()
+        )
         self.dropout = torch.nn.Dropout(dropout)
 
     def forward(self, x, mask):
@@ -158,31 +160,41 @@ class MambaLayer(nn.Module):
         return x
 
 
-def ffn(input_dim, output_dim, width, act, dropout):
-    return nn.Sequential(
-        nn.Linear(input_dim, width),
-        act(),
-        torch.nn.LayerNorm(width),
-        nn.Dropout(dropout),
-        nn.Linear(width, output_dim),
-    )
+def ffn(input_dim, output_dim, width, act, dropout, use_ffn_opt=False):
+    if use_ffn_opt:
+        return nn.Sequential(
+            nn.Linear(input_dim, width),
+            torch.nn.LayerNorm(width),
+            act(),
+            nn.Dropout(dropout),
+            nn.Linear(width, output_dim),
+        )
+
+    else:
+        return nn.Sequential(
+            nn.Linear(input_dim, width),
+            act(),
+            torch.nn.LayerNorm(width),
+            nn.Dropout(dropout),
+            nn.Linear(width, output_dim),
+        )
 
 
 class RegressionOutput(nn.Module):
-    def __init__(self, mode, embed_dim, width, act, dropout, elemtypes):
+    def __init__(self, mode, embed_dim, width, act, dropout, elemtypes, use_ffn_opt=False):
         super(RegressionOutput, self).__init__()
         self.mode = mode
         self.elemtypes = elemtypes
 
         # single output
         if self.mode == "direct" or self.mode == "additive" or self.mode == "multiplicative":
-            self.nn = ffn(embed_dim, 1, width, act, dropout)
+            self.nn = ffn(embed_dim, 1, width, act, dropout, use_ffn_opt)
         # two outputs
         elif self.mode == "linear":
-            self.nn = ffn(embed_dim, 2, width, act, dropout)
+            self.nn = ffn(embed_dim, 2, width, act, dropout, use_ffn_opt)
         elif self.mode == "linear-elemtype":
-            self.nn1 = ffn(embed_dim, len(self.elemtypes), width, act, dropout)
-            self.nn2 = ffn(embed_dim, len(self.elemtypes), width, act, dropout)
+            self.nn1 = ffn(embed_dim, len(self.elemtypes), width, act, dropout, use_ffn_opt)
+            self.nn2 = ffn(embed_dim, len(self.elemtypes), width, act, dropout, use_ffn_opt)
 
     def forward(self, elems, x, orig_value):
 
@@ -244,7 +256,8 @@ class MLPF(nn.Module):
         dropout_conv_reg_ff=0.0,
         dropout_conv_id_mha=0.0,
         dropout_conv_id_ff=0.0,
-        use_pre_layernorm=False,
+        use_improved_attblock=False,
+        use_improved_ffn=False,
         # mamba specific parameters
         d_state=16,
         d_conv=4,
@@ -266,7 +279,8 @@ class MLPF(nn.Module):
         self.bin_size = bin_size
         self.elemtypes_nonzero = elemtypes_nonzero
 
-        self.use_pre_layernorm = use_pre_layernorm
+        self.use_improved_attblock = use_improved_attblock
+        self.use_improved_ffn = use_improved_ffn
 
         if self.conv_type == "attention":
             embedding_dim = num_heads * head_dim
@@ -289,7 +303,7 @@ class MLPF(nn.Module):
                 self.conv_id = nn.ModuleList()
                 self.conv_reg = nn.ModuleList()
 
-                attention_layer = PreLnSelfAttentionLayer if self.use_pre_layernorm else SelfAttentionLayer
+                attention_layer = SelfAttentionLayer_opt if self.use_improved_attblock else SelfAttentionLayer
 
                 for i in range(num_convs):
                     self.conv_id.append(
@@ -344,20 +358,26 @@ class MLPF(nn.Module):
             decoding_dim = self.input_dim + embedding_dim
 
         # DNN that acts on the node level to predict the PID
-        self.nn_binary_particle = ffn(decoding_dim, 2, width, self.act, dropout_ff)
-        self.nn_pid = ffn(decoding_dim, num_classes, width, self.act, dropout_ff)
+        self.nn_binary_particle = ffn(decoding_dim, 2, width, self.act, dropout_ff, self.use_improved_ffn)
+        self.nn_pid = ffn(decoding_dim, num_classes, width, self.act, dropout_ff, self.use_improved_ffn)
 
         # elementwise DNN for node momentum regression
         embed_dim = decoding_dim
-        self.nn_pt = RegressionOutput(pt_mode, embed_dim, width, self.act, dropout_ff, self.elemtypes_nonzero)
-        self.nn_eta = RegressionOutput(eta_mode, embed_dim, width, self.act, dropout_ff, self.elemtypes_nonzero)
-        self.nn_sin_phi = RegressionOutput(sin_phi_mode, embed_dim, width, self.act, dropout_ff, self.elemtypes_nonzero)
-        self.nn_cos_phi = RegressionOutput(cos_phi_mode, embed_dim, width, self.act, dropout_ff, self.elemtypes_nonzero)
-        self.nn_energy = RegressionOutput(energy_mode, embed_dim, width, self.act, dropout_ff, self.elemtypes_nonzero)
-
-        if self.use_pre_layernorm:  # add final norm after last attention block as per https://arxiv.org/abs/2002.04745
-            self.final_norm_id = torch.nn.LayerNorm(decoding_dim)
-            self.final_norm_reg = torch.nn.LayerNorm(embed_dim)
+        self.nn_pt = RegressionOutput(
+            pt_mode, embed_dim, width, self.act, dropout_ff, self.elemtypes_nonzero, self.use_ffn_opt
+        )
+        self.nn_eta = RegressionOutput(
+            eta_mode, embed_dim, width, self.act, dropout_ff, self.elemtypes_nonzero, self.use_ffn_opt
+        )
+        self.nn_sin_phi = RegressionOutput(
+            sin_phi_mode, embed_dim, width, self.act, dropout_ff, self.elemtypes_nonzero, self.use_ffn_opt
+        )
+        self.nn_cos_phi = RegressionOutput(
+            cos_phi_mode, embed_dim, width, self.act, dropout_ff, self.elemtypes_nonzero, self.use_ffn_opt
+        )
+        self.nn_energy = RegressionOutput(
+            energy_mode, embed_dim, width, self.act, dropout_ff, self.elemtypes_nonzero, self.use_ffn_opt
+        )
 
     # @torch.compile
     def forward(self, X_features, mask):
@@ -391,9 +411,6 @@ class MLPF(nn.Module):
             final_embedding_id = torch.cat([Xfeat_normed] + embeddings_id, axis=-1)
         elif self.learned_representation_mode == "last":
             final_embedding_id = torch.cat([Xfeat_normed] + [embeddings_id[-1]], axis=-1)
-
-        if self.use_pre_layernorm:
-            final_embedding_id = self.final_norm_id(final_embedding_id)
 
         preds_binary_particle = self.nn_binary_particle(final_embedding_id)
         preds_pid = self.nn_pid(final_embedding_id)
