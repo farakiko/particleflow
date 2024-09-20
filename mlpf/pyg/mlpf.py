@@ -349,7 +349,7 @@ class MLPF(nn.Module):
     def forward(self, X_features, mask):
         Xfeat_normed = X_features
 
-        embeddings_id, embeddings_reg = []
+        embeddings_id = []
         if self.num_convs != 0:
             if self.input_encoding == "joint":
                 embedding_id = self.nn0_id(Xfeat_normed)
