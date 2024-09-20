@@ -1,10 +1,9 @@
 import torch
 import torch.nn as nn
+from pyg.logger import _logger
+from torch.nn.attention import SDPBackend, sdpa_kernel
 
 from .gnn_lsh import CombinedGraphLayer
-
-from torch.nn.attention import SDPBackend, sdpa_kernel
-from pyg.logger import _logger
 
 
 def get_activation(activation):
@@ -47,7 +46,9 @@ class SelfAttentionLayer(nn.Module):
             self.mha = torch.nn.MultiheadAttention(embedding_dim, num_heads, dropout=dropout_mha, batch_first=True)
         self.norm0 = torch.nn.LayerNorm(embedding_dim)
         self.norm1 = torch.nn.LayerNorm(embedding_dim)
-        self.seq = torch.nn.Sequential(nn.Linear(embedding_dim, width), self.act(), nn.Linear(width, embedding_dim), self.act())
+        self.seq = torch.nn.Sequential(
+            nn.Linear(embedding_dim, width), self.act(), nn.Linear(width, embedding_dim), self.act()
+        )
         self.dropout = torch.nn.Dropout(dropout_ff)
         _logger.info("using attention_type={}".format(attention_type))
         # params for torch sdp_kernel
@@ -103,7 +104,9 @@ class PreLnSelfAttentionLayer(nn.Module):
             self.mha = torch.nn.MultiheadAttention(embedding_dim, num_heads, dropout=dropout_mha, batch_first=True)
         self.norm0 = torch.nn.LayerNorm(embedding_dim)
         self.norm1 = torch.nn.LayerNorm(embedding_dim)
-        self.seq = torch.nn.Sequential(nn.Linear(embedding_dim, width), self.act(), nn.Linear(width, embedding_dim), self.act())
+        self.seq = torch.nn.Sequential(
+            nn.Linear(embedding_dim, width), self.act(), nn.Linear(width, embedding_dim), self.act()
+        )
         self.dropout = torch.nn.Dropout(dropout_ff)
         _logger.info("using attention_type={}".format(attention_type))
         # params for torch sdp_kernel
@@ -147,7 +150,9 @@ class MambaLayer(nn.Module):
             expand=expand,
         )
         self.norm0 = torch.nn.LayerNorm(embedding_dim)
-        self.seq = torch.nn.Sequential(nn.Linear(embedding_dim, width), self.act(), nn.Linear(width, embedding_dim), self.act())
+        self.seq = torch.nn.Sequential(
+            nn.Linear(embedding_dim, width), self.act(), nn.Linear(width, embedding_dim), self.act()
+        )
         self.dropout = torch.nn.Dropout(dropout)
 
     def forward(self, x, mask):
@@ -276,18 +281,13 @@ class MLPF(nn.Module):
         if num_convs != 0:
             if self.input_encoding == "joint":
                 self.nn0_id = ffn(self.input_dim, embedding_dim, width, self.act, dropout_ff)
-                self.nn0_reg = ffn(self.input_dim, embedding_dim, width, self.act, dropout_ff)
             elif self.input_encoding == "split":
                 self.nn0_id = nn.ModuleList()
                 for ielem in range(len(self.elemtypes_nonzero)):
                     self.nn0_id.append(ffn(self.input_dim, embedding_dim, width, self.act, dropout_ff))
-                self.nn0_reg = nn.ModuleList()
-                for ielem in range(len(self.elemtypes_nonzero)):
-                    self.nn0_reg.append(ffn(self.input_dim, embedding_dim, width, self.act, dropout_ff))
 
             if self.conv_type == "attention":
                 self.conv_id = nn.ModuleList()
-                self.conv_reg = nn.ModuleList()
 
                 attention_layer = PreLnSelfAttentionLayer if self.use_pre_layernorm else SelfAttentionLayer
 
@@ -303,26 +303,13 @@ class MLPF(nn.Module):
                             attention_type=attention_type,
                         )
                     )
-                    self.conv_reg.append(
-                        attention_layer(
-                            activation=activation,
-                            embedding_dim=embedding_dim,
-                            num_heads=num_heads,
-                            width=width,
-                            dropout_mha=dropout_conv_reg_mha,
-                            dropout_ff=dropout_conv_reg_ff,
-                            attention_type=attention_type,
-                        )
-                    )
+
             elif self.conv_type == "mamba":
                 self.conv_id = nn.ModuleList()
-                self.conv_reg = nn.ModuleList()
                 for i in range(num_convs):
                     self.conv_id.append(MambaLayer(activation, embedding_dim, width, d_state, d_conv, expand, dropout_ff))
-                    self.conv_reg.append(MambaLayer(activation, embedding_dim, width, d_state, d_conv, expand, dropout_ff))
             elif self.conv_type == "gnn_lsh":
                 self.conv_id = nn.ModuleList()
-                self.conv_reg = nn.ModuleList()
                 for i in range(num_convs):
                     gnn_conf = {
                         "inout_dim": embedding_dim,
@@ -336,7 +323,6 @@ class MLPF(nn.Module):
                         "ffn_dist_num_layers": ffn_dist_num_layers,
                     }
                     self.conv_id.append(CombinedGraphLayer(**gnn_conf))
-                    self.conv_reg.append(CombinedGraphLayer(**gnn_conf))
 
         if self.learned_representation_mode == "concat":
             decoding_dim = self.input_dim + num_convs * embedding_dim
@@ -363,28 +349,21 @@ class MLPF(nn.Module):
     def forward(self, X_features, mask):
         Xfeat_normed = X_features
 
-        embeddings_id, embeddings_reg = [], []
+        embeddings_id, embeddings_reg = []
         if self.num_convs != 0:
             if self.input_encoding == "joint":
                 embedding_id = self.nn0_id(Xfeat_normed)
-                embedding_reg = self.nn0_reg(Xfeat_normed)
             elif self.input_encoding == "split":
                 embedding_id = torch.stack([nn0(Xfeat_normed) for nn0 in self.nn0_id], axis=-1)
                 elemtype_mask = torch.cat([X_features[..., 0:1] == elemtype for elemtype in self.elemtypes_nonzero], axis=-1)
                 embedding_id = torch.sum(embedding_id * elemtype_mask.unsqueeze(-2), axis=-1)
 
-                embedding_reg = torch.stack([nn0(Xfeat_normed) for nn0 in self.nn0_reg], axis=-1)
-                elemtype_mask = torch.cat([X_features[..., 0:1] == elemtype for elemtype in self.elemtypes_nonzero], axis=-1)
-                embedding_reg = torch.sum(embedding_reg * elemtype_mask.unsqueeze(-2), axis=-1)
-
             for num, conv in enumerate(self.conv_id):
                 conv_input = embedding_id if num == 0 else embeddings_id[-1]
                 out_padded = conv(conv_input, mask)
                 embeddings_id.append(out_padded)
-            for num, conv in enumerate(self.conv_reg):
-                conv_input = embedding_reg if num == 0 else embeddings_reg[-1]
-                out_padded = conv(conv_input, mask)
-                embeddings_reg.append(out_padded)
+
+        embeddings_reg = embeddings_id
 
         # id input
         if self.learned_representation_mode == "concat":
