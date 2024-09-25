@@ -52,18 +52,20 @@ cluster_feature_order = [
     "sin_phi",
     "cos_phi",
     "energy",
-    "position.x",
-    "position.y",
-    "position.z",
+    "position.x",  # same as "energy_weighted_x"
+    "position.y",  # same as "energy_weighted_y"
+    "position.z",  # same as "energy_weighted_depth"
     "iTheta",
-    "energy_ecal",
-    "energy_hcal",
+    "energy_ecal_barrel",
+    "energy_ecal_endcap",    
+    "energy_hcal_barrel",
+    "energy_hcal_endcap",    
     "energy_other",
     "num_hits",
     "sigma_x",
     "sigma_y",
     "sigma_z",
-    # additional cluster input features
+    # added by farouk
     "energyError",
     "sigma_energy",
     "sigma_x_weighted",
@@ -179,12 +181,16 @@ def hits_to_features(hit_data, iev, coll, feats):
     # set the subdetector type
     sdcoll = "subdetector"
     feat_arr[sdcoll] = np.zeros(len(feat_arr["type"]), dtype=np.int32)
-    if coll.startswith("ECAL"):
+    if coll.startswith("ECALBarrel"):
         feat_arr[sdcoll][:] = 0
-    elif coll.startswith("HCAL"):
+    elif coll.startswith("ECALEndcap"):
         feat_arr[sdcoll][:] = 1
-    else:
+    elif coll.startswith("HCALBarrel"):
         feat_arr[sdcoll][:] = 2
+    elif coll.startswith("HCALEndcap"):
+        feat_arr[sdcoll][:] = 3
+    else:
+        feat_arr[sdcoll][:] = 4
 
     # hit elemtype is always 2
     feat_arr["elemtype"] = 2 * np.ones(len(feat_arr["type"]), dtype=np.int32)
@@ -335,14 +341,15 @@ def cluster_to_features(prop_data, hit_features, hit_to_cluster, iev):
 
     hit_idx = np.array(hit_to_cluster[0])
     cluster_idx = np.array(hit_to_cluster[1])
-    cl_energy_ecal = []
-    cl_energy_hcal = []
+    cl_energy_ecal_barrel, cl_energy_ecal_endcap = [], []
+    cl_energy_hcal_barrel, cl_energy_hcal_endcap = [], []
     cl_energy_other = []
     num_hits = []
     cl_sigma_x = []
     cl_sigma_y = []
     cl_sigma_z = []
 
+    # added by farouk
     cl_sigma_energy = []
     cl_sigma_x_weighted, cl_sigma_y_weighted, cl_sigma_z_weighted = [], [], []
     cl_energy_weighted_width = []
@@ -350,7 +357,6 @@ def cluster_to_features(prop_data, hit_features, hit_to_cluster, iev):
 
     n_cl = len(ret["energy"])
 
-    # xs, ys, zs, es = [], [], [], []
     for i, cl in enumerate(range(n_cl)):
         msk_cl = cluster_idx == cl
         hits = hit_idx[msk_cl]
@@ -365,24 +371,28 @@ def cluster_to_features(prop_data, hit_features, hit_to_cluster, iev):
         hits_posy = hit_features["position.y"][hits]
         hits_posz = hit_features["position.z"][hits]
 
-        energy_ecal = np.sum(hits_energy[subdets == 0])
-        energy_hcal = np.sum(hits_energy[subdets == 1])
-        energy_other = np.sum(hits_energy[subdets == 2])
+        energy_ecal_barrel = np.sum(hits_energy[subdets == 0])
+        energy_ecal_endcap = np.sum(hits_energy[subdets == 1])
+        energy_hcal_barrel = np.sum(hits_energy[subdets == 2])
+        energy_hcal_endcap = np.sum(hits_energy[subdets == 3])
+        energy_other = np.sum(hits_energy[subdets == 4])
 
-        cl_energy_ecal.append(energy_ecal)
-        cl_energy_hcal.append(energy_hcal)
+        cl_energy_ecal_barrel.append(energy_ecal_barrel)
+        cl_energy_ecal_endcap.append(energy_ecal_endcap)
+        cl_energy_hcal_barrel.append(energy_hcal_barrel)
+        cl_energy_hcal_endcap.append(energy_hcal_endcap)
         cl_energy_other.append(energy_other)
 
         cl_sigma_x.append(np.std(hits_posx))
         cl_sigma_y.append(np.std(hits_posy))
         cl_sigma_z.append(np.std(hits_posz))
 
+        # added by farouk
         cl_sigma_energy.append(np.std(hits_energy))
         cl_sigma_x_weighted.append(np.std(hits_posx * hits_energy))
         cl_sigma_y_weighted.append(np.std(hits_posy * hits_energy))
         cl_sigma_z_weighted.append(np.std(hits_posz * hits_energy))
 
-        # z_bar = np.sum(hits_posz * hits_energy) / np.sum(hits_energy)  # energy weighted average
         x_bar = np.sum(hits_posx * hits_energy) / np.sum(hits_energy)  # energy weighted average
         y_bar = np.sum(hits_posy * hits_energy) / np.sum(hits_energy)  # energy weighted average
 
@@ -392,7 +402,7 @@ def cluster_to_features(prop_data, hit_features, hit_to_cluster, iev):
         cl_energy_weighted_width.append(num / den)
 
         # get position at shower max
-        # at each unique "z" integrate the energy of all the hits to find zmax
+        # for each unique z integrate the energy of all the hits to find zmax
         zmax, emax = 0, -1000
         for z in np.unique(np.array(hits_posz)):
             msk = np.array(hits_posz) == z
@@ -421,8 +431,10 @@ def cluster_to_features(prop_data, hit_features, hit_to_cluster, iev):
 
         cl_width_shower_max.append(num / den)
 
-    ret["energy_ecal"] = np.array(cl_energy_ecal)
-    ret["energy_hcal"] = np.array(cl_energy_hcal)
+    ret["energy_ecal_barrel"] = np.array(cl_energy_ecal_barrel)
+    ret["energy_ecal_endcap"] = np.array(cl_energy_ecal_endcap)
+    ret["energy_hcal_barrel"] = np.array(cl_energy_hcal_barrel)
+    ret["energy_hcal_endcap"] = np.array(cl_energy_hcal_endcap)
     ret["energy_other"] = np.array(cl_energy_other)
     ret["num_hits"] = np.array(num_hits)
     ret["sigma_x"] = np.array(cl_sigma_x)
@@ -444,7 +456,7 @@ def cluster_to_features(prop_data, hit_features, hit_to_cluster, iev):
     ret["sin_phi"] = np.sin(ret["phi"])
     ret["cos_phi"] = np.cos(ret["phi"])
 
-    # additional cluster input features
+    # added by farouk
     ret["sigma_energy"] = np.array(cl_sigma_energy)
     ret["sigma_x_weighted"] = np.array(cl_sigma_x_weighted)
     ret["sigma_y_weighted"] = np.array(cl_sigma_y_weighted)
