@@ -57,9 +57,9 @@ cluster_feature_order = [
     "position.z",  # same as "energy_weighted_depth"
     "iTheta",
     "energy_ecal_barrel",
-    "energy_ecal_endcap",    
+    "energy_ecal_endcap",
     "energy_hcal_barrel",
-    "energy_hcal_endcap",    
+    "energy_hcal_endcap",
     "energy_other",
     "num_hits",
     "sigma_x",
@@ -75,6 +75,11 @@ cluster_feature_order = [
     "pos_shower_max",
     "width_shower_max",
     "energy_shower_max",
+    # eta / phi
+    "sigma_eta",
+    "sigma_phi",
+    "sigma_eta_weighted",
+    "sigma_phi_weighted",
 ]
 hit_feature_order = [
     "elemtype",
@@ -355,6 +360,8 @@ def cluster_to_features(prop_data, hit_features, hit_to_cluster, iev):
     cl_energy_weighted_width = []
     cl_pos_shower_max, cl_energy_shower_max, cl_width_shower_max = [], [], []
 
+    cl_sigma_eta, cl_sigma_phi, cl_sigma_eta_weighted, cl_sigma_phi_weighted = [], [], [], []
+
     n_cl = len(ret["energy"])
 
     for i, cl in enumerate(range(n_cl)):
@@ -389,9 +396,9 @@ def cluster_to_features(prop_data, hit_features, hit_to_cluster, iev):
 
         # added by farouk
         cl_sigma_energy.append(np.std(hits_energy))
-        cl_sigma_x_weighted.append(np.std(hits_posx * hits_energy))
-        cl_sigma_y_weighted.append(np.std(hits_posy * hits_energy))
-        cl_sigma_z_weighted.append(np.std(hits_posz * hits_energy))
+        cl_sigma_x_weighted.append(np.std(hits_posx * hits_energy / np.sum(hits_energy)))
+        cl_sigma_y_weighted.append(np.std(hits_posy * hits_energy / np.sum(hits_energy)))
+        cl_sigma_z_weighted.append(np.std(hits_posz * hits_energy / np.sum(hits_energy)))
 
         x_bar = np.sum(hits_posx * hits_energy) / np.sum(hits_energy)  # energy weighted average
         y_bar = np.sum(hits_posy * hits_energy) / np.sum(hits_energy)  # energy weighted average
@@ -431,6 +438,15 @@ def cluster_to_features(prop_data, hit_features, hit_to_cluster, iev):
 
         cl_width_shower_max.append(num / den)
 
+        # eta / phi
+        hits_p4 = vector.awk(awkward.zip({"energy": hits_energy, "x": hits_posx, "y": hits_posy, "z": hits_posz}))
+
+        cl_sigma_eta.append(np.std(hits_p4.eta))
+        cl_sigma_phi.append(np.std(hits_p4.phi))
+
+        cl_sigma_eta_weighted.append(np.std(hits_p4.eta * hits_energy / np.sum(hits_energy)))
+        cl_sigma_phi_weighted.append(np.std(hits_p4.phi * hits_energy / np.sum(hits_energy)))
+
     ret["energy_ecal_barrel"] = np.array(cl_energy_ecal_barrel)
     ret["energy_ecal_endcap"] = np.array(cl_energy_ecal_endcap)
     ret["energy_hcal_barrel"] = np.array(cl_energy_hcal_barrel)
@@ -466,6 +482,11 @@ def cluster_to_features(prop_data, hit_features, hit_to_cluster, iev):
     ret["pos_shower_max"] = np.array(cl_pos_shower_max)
     ret["energy_shower_max"] = np.array(cl_energy_shower_max)
     ret["width_shower_max"] = np.array(cl_width_shower_max)
+
+    ret["sigma_eta"] = np.array(cl_sigma_eta)
+    ret["sigma_phi"] = np.array(cl_sigma_phi)
+    ret["sigma_eta_weighted"] = np.array(cl_sigma_eta_weighted)
+    ret["sigma_phi_weighted"] = np.array(cl_sigma_phi_weighted)
 
     return awkward.Record(ret)
 
