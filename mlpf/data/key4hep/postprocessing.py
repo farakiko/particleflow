@@ -22,7 +22,17 @@ jetdef = fastjet.JetDefinition(fastjet.ee_genkt_algorithm, 0.4, -1.0)
 jet_ptcut = 5
 
 track_coll = "SiTracks_Refitted"
-mc_coll = "MCParticles"
+
+
+def get_mc_coll(dataset):
+
+    if dataset == "muoncollider":
+        mc_coll = "MCParticle"
+    else:
+        mc_coll = "MCParticles"
+
+    return mc_coll
+
 
 # the feature matrices will be saved in this order
 particle_feature_order = [
@@ -182,7 +192,9 @@ class EventData:
         self.cluster_features = cluster_features  # feature matrix of the calo clusters
         self.track_features = track_features  # feature matrix of the tracks
         self.genparticle_to_hit = genparticle_to_hit  # sparse COO matrix of genparticles to hits (idx_gp, idx_hit, weight)
-        self.genparticle_to_track = genparticle_to_track  # sparse COO matrix of genparticles to tracks (idx_gp, idx_track, weight)
+        self.genparticle_to_track = (
+            genparticle_to_track  # sparse COO matrix of genparticles to tracks (idx_gp, idx_track, weight)
+        )
         self.hit_to_cluster = hit_to_cluster  # sparse COO matrix of hits to clusters (idx_hit, idx_cluster, weight)
         self.gp_merges = gp_merges  # sparse COO matrix of any merged genparticles
 
@@ -248,7 +260,10 @@ def get_calohit_matrix_and_genadj(dataset, hit_data, calohit_links, iev, collect
             hit_idx_global += 1
     hit_idx_local_to_global = {v: k for k, v in hit_idx_global_to_local.items()}
     hit_feature_matrix = awkward.Record(
-        {k: awkward.concatenate([hit_feature_matrix[i][k] for i in range(len(hit_feature_matrix))]) for k in hit_feature_matrix[0].fields}
+        {
+            k: awkward.concatenate([hit_feature_matrix[i][k] for i in range(len(hit_feature_matrix))])
+            for k in hit_feature_matrix[0].fields
+        }
     )
 
     # add all edges from genparticle to calohit
@@ -258,13 +273,13 @@ def get_calohit_matrix_and_genadj(dataset, hit_data, calohit_links, iev, collect
         calohit_to_gen_gen_colid = calohit_links["CalohitMCTruthLink#1.collectionID"][iev]
         calohit_to_gen_calo_idx = calohit_links["CalohitMCTruthLink#0.index"][iev]
         calohit_to_gen_gen_idx = calohit_links["CalohitMCTruthLink#1.index"][iev]
-    elif dataset == "fcc":
+    elif (dataset == "fcc") | (dataset == "muoncollider"):
         calohit_to_gen_calo_colid = calohit_links["_CalohitMCTruthLink_from/_CalohitMCTruthLink_from.collectionID"][iev]
         calohit_to_gen_gen_colid = calohit_links["_CalohitMCTruthLink_to/_CalohitMCTruthLink_to.collectionID"][iev]
         calohit_to_gen_calo_idx = calohit_links["_CalohitMCTruthLink_from/_CalohitMCTruthLink_from.index"][iev]
         calohit_to_gen_gen_idx = calohit_links["_CalohitMCTruthLink_to/_CalohitMCTruthLink_to.index"][iev]
     else:
-        raise Exception("--dataset provided is not supported. Only 'fcc' or 'clic' are supported atm.")
+        raise Exception("--dataset provided is not supported. Only 'fcc' 'muoncollider' or 'clic' are supported atm.")
 
     genparticle_to_hit_matrix_coo0 = []
     genparticle_to_hit_matrix_coo1 = []
@@ -298,13 +313,13 @@ def hit_cluster_adj(dataset, prop_data, hit_idx_local_to_global, iev):
         idx_arr = prop_data["PandoraClusters#1"]["PandoraClusters#1.index"][iev]
         hits_begin = prop_data["PandoraClusters"]["PandoraClusters.hits_begin"][iev]
         hits_end = prop_data["PandoraClusters"]["PandoraClusters.hits_end"][iev]
-    elif dataset == "fcc":
+    elif (dataset == "fcc") | (dataset == "muoncollider"):
         coll_arr = prop_data["_PandoraClusters_hits/_PandoraClusters_hits.collectionID"][iev]
         idx_arr = prop_data["_PandoraClusters_hits/_PandoraClusters_hits.index"][iev]
         hits_begin = prop_data["PandoraClusters"]["PandoraClusters.hits_begin"][iev]
         hits_end = prop_data["PandoraClusters"]["PandoraClusters.hits_end"][iev]
     else:
-        raise Exception("--dataset provided is not supported. Only 'fcc' or 'clic' are supported atm.")
+        raise Exception("--dataset provided is not supported. Only 'fcc' 'muoncollider' or 'clic' are supported atm.")
 
     # index in the array of all hits
     hit_to_cluster_matrix_coo0 = []
@@ -335,7 +350,7 @@ def gen_to_features(dataset, prop_data, iev):
 
     if dataset == "clic":
         gen_arr = prop_data[iev]
-    elif dataset == "fcc":
+    elif (dataset == "fcc") | (dataset == "muoncollider"):
         gen_arr = prop_data[mc_coll][iev]
     else:
         raise Exception("--dataset provided is not supported. Only 'fcc' or 'clic' are supported atm.")
@@ -343,7 +358,9 @@ def gen_to_features(dataset, prop_data, iev):
     gen_arr = {k.replace(mc_coll + ".", ""): gen_arr[k] for k in gen_arr.fields}
 
     MCParticles_p4 = vector.awk(
-        awkward.zip({"mass": gen_arr["mass"], "x": gen_arr["momentum.x"], "y": gen_arr["momentum.y"], "z": gen_arr["momentum.z"]})
+        awkward.zip(
+            {"mass": gen_arr["mass"], "x": gen_arr["momentum.x"], "y": gen_arr["momentum.y"], "z": gen_arr["momentum.z"]}
+        )
     )
     gen_arr["pt"] = MCParticles_p4.pt
     gen_arr["eta"] = MCParticles_p4.eta
@@ -376,8 +393,8 @@ def gen_to_features(dataset, prop_data, iev):
 
     if dataset == "clic":
         ret["index"] = prop_data["MCParticles#1.index"][iev]
-    elif dataset == "fcc":
-        ret["index"] = prop_data["_MCParticles_daughters/_MCParticles_daughters.index"][iev]
+    elif (dataset == "fcc") | (dataset == "muoncollider"):
+        ret["index"] = prop_data[f"_{mc_coll}_daughters/_{mc_coll}_daughters.index"][iev]
     else:
         raise Exception("--dataset provided is not supported. Only 'fcc' or 'clic' are supported atm.")
 
@@ -389,7 +406,7 @@ def genparticle_track_adj(dataset, sitrack_links, iev):
     if dataset == "clic":
         trk_to_gen_trkidx = sitrack_links["SiTracksMCTruthLink#0.index"][iev]
         trk_to_gen_genidx = sitrack_links["SiTracksMCTruthLink#1.index"][iev]
-    elif dataset == "fcc":
+    elif (dataset == "fcc") | (dataset == "muoncollider"):
         trk_to_gen_trkidx = sitrack_links["_SiTracksMCTruthLink_from/_SiTracksMCTruthLink_from.index"][iev]
         trk_to_gen_genidx = sitrack_links["_SiTracksMCTruthLink_to/_SiTracksMCTruthLink_to.index"][iev]
     else:
@@ -482,7 +499,7 @@ def track_to_features(dataset, prop_data, iev):
         feats_from_track = ["type", "chi2", "ndf", "dEdx", "dEdxError", "radiusOfInnermostHit"]
         ret = {feat: track_arr[track_coll + "." + feat] for feat in feats_from_track}
 
-    elif dataset == "fcc":
+    elif (dataset == "fcc") | (dataset == "muoncollider"):
         track_arr = prop_data[track_coll][iev]
         # the following are needed since they are no longer defined under SiTracks_Refitted
         track_arr_dQdx = prop_data["SiTracks_Refitted_dQdx"][iev]
@@ -527,8 +544,10 @@ def track_to_features(dataset, prop_data, iev):
 
         if dataset == "clic":
             ret[k] = awkward.to_numpy(prop_data["SiTracks_1"]["SiTracks_1." + k][iev][trackstate_idx])
-        elif dataset == "fcc":
-            ret[k] = awkward.to_numpy(prop_data["_SiTracks_Refitted_trackStates"]["_SiTracks_Refitted_trackStates." + k][iev][trackstate_idx])
+        elif (dataset == "fcc") | (dataset == "muoncollider"):
+            ret[k] = awkward.to_numpy(
+                prop_data["_SiTracks_Refitted_trackStates"]["_SiTracks_Refitted_trackStates." + k][iev][trackstate_idx]
+            )
 
         else:
             raise Exception("--dataset provided is not supported. Only 'fcc' or 'clic' are supported atm.")
@@ -617,7 +636,9 @@ def add_daughters_to_status1(gen_features, genparticle_to_hit, genparticle_to_tr
 
 def get_genparticles_and_adjacencies(dataset, prop_data, hit_data, calohit_links, sitrack_links, iev, collectionIDs):
     gen_features = gen_to_features(dataset, prop_data, iev)
-    hit_features, genparticle_to_hit, hit_idx_local_to_global = get_calohit_matrix_and_genadj(dataset, hit_data, calohit_links, iev, collectionIDs)
+    hit_features, genparticle_to_hit, hit_idx_local_to_global = get_calohit_matrix_and_genadj(
+        dataset, hit_data, calohit_links, iev, collectionIDs
+    )
     hit_to_cluster = hit_cluster_adj(dataset, prop_data, hit_idx_local_to_global, iev)
     cluster_features = cluster_to_features(prop_data, hit_features, hit_to_cluster, iev)
     track_features = track_to_features(dataset, prop_data, iev)
@@ -627,7 +648,9 @@ def get_genparticles_and_adjacencies(dataset, prop_data, hit_data, calohit_links
     mask_status1 = gen_features["generatorStatus"] == 1
 
     if gen_features["index"] is not None:  # if there are even daughters
-        genparticle_to_hit, genparticle_to_trk = add_daughters_to_status1(gen_features, genparticle_to_hit, genparticle_to_trk)
+        genparticle_to_hit, genparticle_to_trk = add_daughters_to_status1(
+            gen_features, genparticle_to_hit, genparticle_to_trk
+        )
 
     n_gp = awkward.count(gen_features["PDG"])
     n_track = awkward.count(track_features["type"])
@@ -635,7 +658,11 @@ def get_genparticles_and_adjacencies(dataset, prop_data, hit_data, calohit_links
     n_cluster = awkward.count(cluster_features["type"])
 
     if len(genparticle_to_trk[0]) > 0:
-        gp_to_track = coo_matrix((genparticle_to_trk[2], (genparticle_to_trk[0], genparticle_to_trk[1])), shape=(n_gp, n_track)).max(axis=1).todense()
+        gp_to_track = (
+            coo_matrix((genparticle_to_trk[2], (genparticle_to_trk[0], genparticle_to_trk[1])), shape=(n_gp, n_track))
+            .max(axis=1)
+            .todense()
+        )
     else:
         gp_to_track = np.zeros((n_gp, 1))
 
@@ -665,7 +692,9 @@ def get_genparticles_and_adjacencies(dataset, prop_data, hit_data, calohit_links
 
     if len(np.array(mask_visible)) == 1:
         # event has only one particle (then index will be empty because no daughters)
-        gen_features = awkward.Record({feat: (gen_features[feat][mask_visible] if feat != "index" else None) for feat in gen_features.keys()})
+        gen_features = awkward.Record(
+            {feat: (gen_features[feat][mask_visible] if feat != "index" else None) for feat in gen_features.keys()}
+        )
     else:
         gen_features = awkward.Record({feat: gen_features[feat][mask_visible] for feat in gen_features.keys()})
 
@@ -698,8 +727,12 @@ def assign_genparticles_to_obj_and_merge(gpdata):
         ).todense()
     )
 
-    gp_to_calohit = coo_matrix((gpdata.genparticle_to_hit[2], (gpdata.genparticle_to_hit[0], gpdata.genparticle_to_hit[1])), shape=(n_gp, n_hit))
-    calohit_to_cluster = coo_matrix((gpdata.hit_to_cluster[2], (gpdata.hit_to_cluster[0], gpdata.hit_to_cluster[1])), shape=(n_hit, n_cluster))
+    gp_to_calohit = coo_matrix(
+        (gpdata.genparticle_to_hit[2], (gpdata.genparticle_to_hit[0], gpdata.genparticle_to_hit[1])), shape=(n_gp, n_hit)
+    )
+    calohit_to_cluster = coo_matrix(
+        (gpdata.hit_to_cluster[2], (gpdata.hit_to_cluster[0], gpdata.hit_to_cluster[1])), shape=(n_hit, n_cluster)
+    )
 
     gp_to_cluster = np.array((gp_to_calohit * calohit_to_cluster).todense())
 
@@ -872,14 +905,16 @@ def get_reco_properties(dataset, prop_data, iev):
     if dataset == "clic":
         reco_arr = prop_data["MergedRecoParticles"][iev]
         reco_arr = {k.replace("MergedRecoParticles.", ""): reco_arr[k] for k in reco_arr.fields}
-    elif dataset == "fcc":
+    elif (dataset == "fcc") | (dataset == "muoncollider"):
         reco_arr = prop_data["PandoraPFOs"][iev]
         reco_arr = {k.replace("PandoraPFOs.", ""): reco_arr[k] for k in reco_arr.fields}
     else:
         raise Exception("--dataset provided is not supported. Only 'fcc' or 'clic' are supported atm.")
 
     reco_p4 = vector.awk(
-        awkward.zip({"mass": reco_arr["mass"], "x": reco_arr["momentum.x"], "y": reco_arr["momentum.y"], "z": reco_arr["momentum.z"]})
+        awkward.zip(
+            {"mass": reco_arr["mass"], "x": reco_arr["momentum.x"], "y": reco_arr["momentum.y"], "z": reco_arr["momentum.z"]}
+        )
     )
     reco_arr["pt"] = reco_p4.pt
     reco_arr["eta"] = reco_p4.eta
@@ -888,7 +923,7 @@ def get_reco_properties(dataset, prop_data, iev):
 
     if dataset == "clic":
         msk = reco_arr["type"] != 0
-    elif dataset == "fcc":
+    elif (dataset == "fcc") | (dataset == "muoncollider"):
         msk = reco_arr["PDG"] != 0
     else:
         raise Exception("--dataset provided is not supported. Only 'fcc' or 'clic' are supported atm.")
@@ -1031,28 +1066,44 @@ def process_one_file(fn, ofn, dataset):
             "HCALOther": arrs["HCALOther"].array(),
             "MUON": arrs["MUON"].array(),
         }
-    elif dataset == "fcc":
-        collectionIDs = {
-            k: v
-            for k, v in zip(
-                fi.get("podio_metadata").arrays("events___idTable/m_names")["events___idTable/m_names"][0],
-                fi.get("podio_metadata").arrays("events___idTable/m_collectionIDs")["events___idTable/m_collectionIDs"][0],
-            )
-        }
+    elif (dataset == "fcc") | (dataset == "muoncollider"):
+        if dataset == "fcc":
+            collectionIDs = {
+                k: v
+                for k, v in zip(
+                    fi.get("podio_metadata").arrays("events___idTable/m_names")["events___idTable/m_names"][0],
+                    fi.get("podio_metadata").arrays("events___idTable/m_collectionIDs")["events___idTable/m_collectionIDs"][
+                        0
+                    ],
+                )
+            }
+
+        elif dataset == "muoncollider":
+            collectionIDs = {
+                k: v
+                for k, v in zip(
+                    fi.get("podio_metadata").arrays("events___CollectionTypeInfo.name")["events___CollectionTypeInfo.name"][
+                        0
+                    ],
+                    fi.get("podio_metadata").arrays("events___CollectionTypeInfo.collectionID")[
+                        "events___CollectionTypeInfo.collectionID"
+                    ][0],
+                )
+            }
         prop_data = arrs.arrays(
             [
                 mc_coll,
-                "MCParticles.PDG",
-                "MCParticles.momentum.x",
-                "MCParticles.momentum.y",
-                "MCParticles.momentum.z",
-                "MCParticles.mass",
-                "MCParticles.charge",
-                "MCParticles.generatorStatus",
-                "MCParticles.simulatorStatus",
-                "MCParticles.daughters_begin",
-                "MCParticles.daughters_end",
-                "_MCParticles_daughters/_MCParticles_daughters.index",  # similar to "MCParticles#1.index" in clic
+                f"{mc_coll}.PDG",
+                f"{mc_coll}.momentum.x",
+                f"{mc_coll}.momentum.y",
+                f"{mc_coll}.momentum.z",
+                f"{mc_coll}.mass",
+                f"{mc_coll}.charge",
+                f"{mc_coll}.generatorStatus",
+                f"{mc_coll}.simulatorStatus",
+                f"{mc_coll}.daughters_begin",
+                f"{mc_coll}.daughters_end",
+                f"_{mc_coll}_daughters/_{mc_coll}_daughters.index",  # similar to "MCParticles#1.index" in clic
                 track_coll,
                 "_SiTracks_Refitted_trackStates",
                 "PandoraClusters",
@@ -1062,6 +1113,7 @@ def process_one_file(fn, ofn, dataset):
                 "SiTracks_Refitted_dQdx",
             ]
         )
+
         calohit_links = arrs.arrays(
             [
                 "CalohitMCTruthLink.weight",
@@ -1098,15 +1150,15 @@ def process_one_file(fn, ofn, dataset):
         raise Exception("--dataset provided is not supported. Only 'fcc' or 'clic' are supported atm.")
 
     # Compute truth MET and jets from status=1 pythia particles
-    mc_pdg = np.abs(prop_data["MCParticles.PDG"])
-    mc_st1_mask = (prop_data["MCParticles.generatorStatus"] == 1) & (mc_pdg != 12) & (mc_pdg != 14) & (mc_pdg != 16)
+    mc_pdg = np.abs(prop_data[f"{mc_coll}.PDG"])
+    mc_st1_mask = (prop_data[f"{mc_coll}.generatorStatus"] == 1) & (mc_pdg != 12) & (mc_pdg != 14) & (mc_pdg != 16)
     mc_st1_p4 = vector.awk(
         awkward.zip(
             {
-                "px": prop_data["MCParticles.momentum.x"][mc_st1_mask],
-                "py": prop_data["MCParticles.momentum.y"][mc_st1_mask],
-                "pz": prop_data["MCParticles.momentum.z"][mc_st1_mask],
-                "mass": prop_data["MCParticles.mass"][mc_st1_mask],
+                "px": prop_data[f"{mc_coll}les.momentum.x"][mc_st1_mask],
+                "py": prop_data[f"{mc_coll}.momentum.y"][mc_st1_mask],
+                "pz": prop_data[f"{mc_coll}.momentum.z"][mc_st1_mask],
+                "mass": prop_data[f"{mc_coll}.mass"][mc_st1_mask],
             }
         )
     )
@@ -1121,7 +1173,7 @@ def process_one_file(fn, ofn, dataset):
 
         if dataset == "clic":
             reco_type = np.abs(reco_arr["type"])
-        elif dataset == "fcc":
+        elif (dataset == "fcc") | (dataset == "muoncollider"):
             reco_type = np.abs(reco_arr["PDG"])
         else:
             raise Exception("--dataset provided is not supported. Only 'fcc' or 'clic' are supported atm.")
@@ -1189,19 +1241,29 @@ def process_one_file(fn, ofn, dataset):
         assert np.all(used_rps == 1)
 
         gps_track = get_particle_feature_matrix(track_to_gp_all, gpdata_cleaned.gen_features, particle_feature_order)
-        gps_track[:, 0] = np.array([map_neutral_to_charged(map_pdgid_to_candid(p, c)) for p, c in zip(gps_track[:, 0], gps_track[:, 1])])
+        gps_track[:, 0] = np.array(
+            [map_neutral_to_charged(map_pdgid_to_candid(p, c)) for p, c in zip(gps_track[:, 0], gps_track[:, 1])]
+        )
         gps_cluster = get_particle_feature_matrix(cluster_to_gp_all, gpdata_cleaned.gen_features, particle_feature_order)
-        gps_cluster[:, 0] = np.array([map_charged_to_neutral(map_pdgid_to_candid(p, c)) for p, c in zip(gps_cluster[:, 0], gps_cluster[:, 1])])
+        gps_cluster[:, 0] = np.array(
+            [map_charged_to_neutral(map_pdgid_to_candid(p, c)) for p, c in zip(gps_cluster[:, 0], gps_cluster[:, 1])]
+        )
         gps_cluster[:, 1] = 0
 
         rps_track = get_particle_feature_matrix(track_to_rp_all, reco_features, particle_feature_order)
-        rps_track[:, 0] = np.array([map_neutral_to_charged(map_pdgid_to_candid(p, c)) for p, c in zip(rps_track[:, 0], rps_track[:, 1])])
+        rps_track[:, 0] = np.array(
+            [map_neutral_to_charged(map_pdgid_to_candid(p, c)) for p, c in zip(rps_track[:, 0], rps_track[:, 1])]
+        )
         rps_cluster = get_particle_feature_matrix(cluster_to_rp_all, reco_features, particle_feature_order)
-        rps_cluster[:, 0] = np.array([map_charged_to_neutral(map_pdgid_to_candid(p, c)) for p, c in zip(rps_cluster[:, 0], rps_cluster[:, 1])])
+        rps_cluster[:, 0] = np.array(
+            [map_charged_to_neutral(map_pdgid_to_candid(p, c)) for p, c in zip(rps_cluster[:, 0], rps_cluster[:, 1])]
+        )
         rps_cluster[:, 1] = 0
 
         # all initial gen/reco particle energy must be reconstructable
-        assert abs(np.sum(gps_track[:, 6]) + np.sum(gps_cluster[:, 6]) - np.sum(gpdata_cleaned.gen_features["energy"])) < 1e-2
+        assert (
+            abs(np.sum(gps_track[:, 6]) + np.sum(gps_cluster[:, 6]) - np.sum(gpdata_cleaned.gen_features["energy"])) < 1e-2
+        )
 
         assert abs(np.sum(rps_track[:, 6]) + np.sum(rps_cluster[:, 6]) - np.sum(reco_features["energy"])) < 1e-2
 
@@ -1248,7 +1310,9 @@ def process_one_file(fn, ofn, dataset):
         sorted_jet_idx = awkward.argsort(target_jets.pt, axis=-1, ascending=False).to_list()
         target_jets_indices = target_jets_indices.to_list()
         for jet_idx in sorted_jet_idx:
-            jet_constituents = [index_mapping[idx] for idx in target_jets_indices[jet_idx]]  # map back to constituent index *before* masking
+            jet_constituents = [
+                index_mapping[idx] for idx in target_jets_indices[jet_idx]
+            ]  # map back to constituent index *before* masking
             ytarget_constituents[jet_constituents] = jet_idx
         ytarget_track_constituents = ytarget_constituents[: len(ytarget_track)]
         ytarget_cluster_constituents = ytarget_constituents[len(ytarget_track) :]
@@ -1280,7 +1344,9 @@ def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--input", type=str, help="Input file ROOT file", required=True)
     parser.add_argument("--outpath", type=str, default="raw", help="output path")
-    parser.add_argument("--dataset", type=str, help="Which detector dataset?", required=True, choices=["clic", "fcc"])
+    parser.add_argument(
+        "--dataset", type=str, help="Which detector dataset?", required=True, choices=["clic", "fcc", "muoncollider"]
+    )
 
     args = parser.parse_args()
     return args
@@ -1303,4 +1369,6 @@ def process(args):
 
 if __name__ == "__main__":
     args = parse_args()
+
+    mc_coll = get_mc_coll(args.dataset)
     process(args)
