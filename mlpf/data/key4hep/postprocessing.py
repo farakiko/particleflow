@@ -1185,8 +1185,26 @@ def process_one_file(fn, ofn, dataset):
             "EcalBarrelCollectionRec": arrs["EcalBarrelCollectionRec"].array(),
             "EcalEndcapCollectionRec": arrs["EcalEndcapCollectionRec"].array(),
             "HcalBarrelCollectionRec": arrs["HcalBarrelCollectionRec"].array(),
+            "HcalEndcapCollectionRec": arrs["HcalEndcapCollectionRec"].array(),
             "MUON": arrs["MUON"].array(),
         }
+
+        # CalohitMCTruthLink references Digi hits, but PandoraClusters references Rec hits.
+        # Since Digi and Rec hits have identical ordering (same index = same cell),
+        # remap the Digi collection IDs in the link to their Rec counterparts.
+        _digi_colls = ["EcalBarrelCollectionDigi", "EcalEndcapCollectionDigi",
+                       "HcalBarrelCollectionDigi", "HcalEndcapCollectionDigi"]
+        _rec_colls  = ["EcalBarrelCollectionRec",  "EcalEndcapCollectionRec",
+                       "HcalBarrelCollectionRec",  "HcalEndcapCollectionRec"]
+        _digi_to_rec_colid = {
+            collectionIDs[d]: collectionIDs[r]
+            for d, r in zip(_digi_colls, _rec_colls)
+        }
+        _from_colid_key = "_CalohitMCTruthLink_from/_CalohitMCTruthLink_from.collectionID"
+        calohit_links[_from_colid_key] = awkward.Array([
+            [_digi_to_rec_colid.get(int(x), int(x)) for x in ev]
+            for ev in calohit_links[_from_colid_key]
+        ])
     else:
         raise Exception("--dataset provided is not supported. Only 'fcc', 'clic', or 'muoncollider' are supported atm.")
 
@@ -1404,7 +1422,10 @@ def process(args):
         flist = glob.glob(args.input + "/*.root")
         for infile in flist:
             outfile = os.path.join(args.outpath, os.path.basename(infile).split(".")[0] + ".parquet")
-            process_one_file(infile, outfile, args.dataset)
+            try:
+                process_one_file(infile, outfile, args.dataset)
+            except Exception as e:
+                print(f"ERROR processing {infile}: {e}, skipping")
     else:
         infile = args.input
         outfile = os.path.join(args.outpath, os.path.basename(infile).split(".")[0] + ".parquet")
