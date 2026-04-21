@@ -17,7 +17,9 @@ class Dataset(Enum):
 
 class ModelType(Enum):
     ATTENTION = "attention"
-    GNN_LSH = "gnn_lsh"
+    GNNLSH = "gnnlsh"
+    LITEPT = "litept"
+    HEPT = "hept"
 
 
 class InputEncoding(Enum):
@@ -63,9 +65,8 @@ class LRSchedule(Enum):
 
 class AttentionType(Enum):
     MATH = "math"
-    EFFICIENT = "efficient"
     FLASH = "flash"
-    LINEAR = "linear"
+    SIMPLE = "simple"
 
 
 from dataclasses import dataclass, fields
@@ -335,7 +336,6 @@ Y_FEATURES = ParticleFeatures.get_names()
 
 class GNNLSHConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    conv_type: ModelType = ModelType.GNN_LSH
     embedding_dim: int = 128
     width: int = 128
     num_convs: int = 2
@@ -352,9 +352,6 @@ class GNNLSHConfig(BaseModel):
 
 class AttentionConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    conv_type: ModelType = ModelType.ATTENTION
-    embedding_dim: int = 128
-    width: int = 128
     num_convs: int = 3
     dropout_ff: float = 0.0
     activation: Activation = Activation.ELU
@@ -367,9 +364,59 @@ class AttentionConfig(BaseModel):
     dropout_conv_id_mha: float = 0.0
     dropout_conv_id_ff: float = 0.0
     use_pre_layernorm: bool = True
-    use_simplified_attention: bool = False
     export_onnx_fused: bool = False
     save_attention: bool = False
+
+
+class LitePTConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    embedding_dim: int = 144
+    width: int = 144
+    num_convs: int = 1
+    activation: Activation = Activation.GELU
+    dropout_ff: float = 0.0
+    order: List[str] = ["z", "z-trans", "hilbert", "hilbert-trans"]
+    stride: List[int] = [2, 2, 2, 2]
+    enc_depths: List[int] = [2, 2, 2, 6, 2]
+    enc_channels: List[int] = [144, 144, 144, 144, 144]
+    enc_num_head: List[int] = [8, 8, 8, 8, 8]
+    enc_patch_size: List[int] = [1024, 1024, 1024, 1024, 1024]
+    enc_conv: List[bool] = [True, True, True, False, False]
+    enc_attn: List[bool] = [False, False, False, True, True]
+    enc_rope_freq: List[float] = [100.0, 100.0, 100.0, 100.0, 100.0]
+    dec_depths: List[int] = [0, 0, 0, 0]
+    dec_channels: List[int] = [144, 144, 144, 144]
+    dec_num_head: List[int] = [8, 8, 8, 8]
+    dec_patch_size: List[int] = [1024, 1024, 1024, 1024]
+    dec_conv: List[bool] = [False, False, False, False]
+    dec_attn: List[bool] = [False, False, False, False]
+    dec_rope_freq: List[float] = [100.0, 100.0, 100.0, 100.0]
+    mlp_ratio: int = 4
+    qkv_bias: bool = True
+    qk_scale: Optional[float] = None
+    attn_drop: float = 0.0
+    proj_drop: float = 0.0
+    drop_path: float = 0.3
+    pre_norm: bool = True
+    shuffle_orders: bool = True
+    enc_mode: bool = False
+    coord_indices: List[int] = [2, 3, 4]
+    grid_size: float = 0.01
+
+
+class HEPTConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    embedding_dim: int = 128
+    width: int = 512
+    num_convs: int = 6
+    num_heads: int = 16
+    dropout_ff: float = 0.1
+    activation: Activation = Activation.ELU
+    pos: bool = False
+    block_size: int = 100
+    n_hashes: int = 3
+    num_regions: int = 140
+    num_w_per_dist: int = 10
 
 
 class ModelArchitectureConfig(BaseModel):
@@ -386,8 +433,10 @@ class ModelArchitectureConfig(BaseModel):
     trainable: str = "all"
 
     # Nested configs
-    gnn_lsh: Optional[GNNLSHConfig] = None
+    gnnlsh: Optional[GNNLSHConfig] = None
     attention: Optional[AttentionConfig] = None
+    litept: Optional[LitePTConfig] = None
+    hept: Optional[HEPTConfig] = None
 
 
 class DatasetSample(BaseModel):
@@ -579,7 +628,7 @@ class MLPFConfig(BaseModel):
                 set_nested_dict(config_dict, "model.attention.attention_type", args.attention_type)
 
             if hasattr(args, "num_convs") and args.num_convs is not None:
-                for m in ["gnn_lsh", "attention"]:
+                for m in ["gnnlsh", "attention", "litept", "hept"]:
                     if m in config_dict["model"]:
                         set_nested_dict(config_dict, f"model.{m}.num_convs", args.num_convs)
 
@@ -657,11 +706,11 @@ class MLPFConfig(BaseModel):
         # 7. Pipeline Overrides
         if args and hasattr(args, "pipeline") and args.pipeline:
             # Replicate pipeline-specific overrides
-            if "gnn_lsh" not in config_dict["model"]:
-                config_dict["model"]["gnn_lsh"] = {}
-            config_dict["model"]["gnn_lsh"]["num_convs"] = 1
-            config_dict["model"]["gnn_lsh"]["width"] = 32
-            config_dict["model"]["gnn_lsh"]["embedding_dim"] = 32
+            if "gnnlsh" not in config_dict["model"]:
+                config_dict["model"]["gnnlsh"] = {}
+            config_dict["model"]["gnnlsh"]["num_convs"] = 1
+            config_dict["model"]["gnnlsh"]["width"] = 32
+            config_dict["model"]["gnnlsh"]["embedding_dim"] = 32
 
             if "attention" not in config_dict["model"]:
                 config_dict["model"]["attention"] = {}

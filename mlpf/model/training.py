@@ -69,6 +69,7 @@ from mlpf.model.monitoring import (
     log_step_to_tensorboard,
     log_dataloader_to_tensorboard,
     log_open_files_to_tensorboard,
+    log_gpu_utilization_to_tensorboard,
     log_gradients_to_tensorboard,
     log_residuals_to_tensorboard,
 )
@@ -167,6 +168,7 @@ def train_step(
     # Log step metrics
     if tensorboard_writer is not None:
         log_open_files_to_tensorboard(tensorboard_writer, step)
+        log_gpu_utilization_to_tensorboard(tensorboard_writer, step)
         log_step_to_tensorboard(batch, loss["Total"], lr_schedule, tensorboard_writer, step)
         log_dataloader_to_tensorboard(loader_state_dict, tensorboard_writer, step)
         if step % tensorboard_step_freq == 0:
@@ -677,7 +679,13 @@ def run_test(rank, world_size, config: MLPFConfig, outdir, model, sample, testdi
         ntest = config.ntest // len(split_configs)
 
     for split_config in split_configs:
-        ds = PFDataset(config.data_dir, f"{sample}/{split_config}:{version}", "test", num_samples=ntest).ds
+        ds = PFDataset(
+            config.data_dir,
+            f"{sample}/{split_config}:{version}",
+            "test",
+            num_samples=ntest,
+            pad_to_multiple=config.pad_to_multiple_elements,
+        ).ds
         dataset.append(ds)
     ds = torch.utils.data.ConcatDataset(dataset)
 
