@@ -56,3 +56,7 @@ onnx_validation/
 particleflow.egg-info/
 
 build
+
+data/cms/phase2/
+.staging
+kube/
