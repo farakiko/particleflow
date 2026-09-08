@@ -1,0 +1,24 @@
+# HTCondor submit for Run3-style postprocessing (one submission per sample).
+# submit.sh fills SAMPLE / FILELIST / NJOBS and creates the eos output subdir. Or submit by hand:
+#   condor_submit sample=qcd_0pu filelist=filelists/qcd_0pu.txt njobs=2267 postprocess.sub
+universe = vanilla
+executable = wrapper.sh
+arguments  = $(Process) $Fnx(filelist)
+getenv     = TRUE
+
+# our postprocessing is self-contained -> ship it + the filelist with the job
+transfer_input_files = ../postprocessing_run3style.py, $(filelist)
+should_transfer_files = YES
+when_to_transfer_output = ON_EXIT
+transfer_output_files = ""
+
+# knobs (override on the condor_submit line or edit here); wrapper.sh reads these
+environment = "FILES_PER_JOB=10 MLPF_VENV=/afs/cern.ch/work/f/fmokhtar/private/mlpf_env EOS_REDIR=root://eosuser.cern.ch EOS_PATH=/eos/user/f/fmokhtar/mlpf/phase2/pkl_run3style"
+
+output = logs/$(sample)_$(Process).out
+error  = logs/$(sample)_$(Process).err
+log    = logs/$(sample).log
+notification = never
++JobFlavour = "workday"
+
+queue $(njobs)
