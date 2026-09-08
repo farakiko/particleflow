@@ -3,7 +3,7 @@ name = "particleflow"
 version = "2.5.0"
 description = "Machine Learning for Particle Flow Reconstruction"
 channels = ["conda-forge", "bioconda"]
-platforms = ["linux-64"]
+platforms = ["linux-64", "osx-arm64"]
 
 [dependencies]
 python = ">=3.10"
@@ -12,6 +12,16 @@ snakemake-executor-plugin-cluster-generic = "*"
 snakemake-executor-plugin-slurm = "*"
 pyyaml = "*"
 huggingface_hub = "*"
+# --- added for local notebook work ---
+nbclassic = "*"
+ipykernel = "*"
+uproot = "*"
+awkward = "*"
+vector = "*"
+matplotlib = "*"
+mplhep = "*"
+plotly = "*"
+fastjet = "*"
 
 [pypi-dependencies]
 comet-ml = "*"

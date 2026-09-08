@@ -10,6 +10,7 @@ from mlpf.utils import resolve_path, load_spec, set_nested_dict, _resolve_paths_
 
 class Dataset(Enum):
     CMS = "cms"
+    CMS_PHASE2 = "cms_phase2"
     CLIC = "clic"
     CLD = "cld"
     CLIC_HITS = "clic_hits"
@@ -298,6 +299,7 @@ class ParticleFeatures:
 # 0 is placeholder for padded entries (generally only when batching events together)
 ELEM_TYPES = {
     Dataset.CMS.value: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
+    Dataset.CMS_PHASE2.value: [0, 1, 2],  # 1 - track, 2 - CLUE3D trackster
     Dataset.CLIC.value: [0, 1, 2],  # 1 - track, 2 - cluster
     Dataset.CLD.value: [0, 1, 2],  # 1 - track, 2 - cluster
     Dataset.CLIC_HITS.value: [0, 1, 2],  # 1 - tracker hit, 2 - calorimeter hit
@@ -307,6 +309,7 @@ ELEM_TYPES = {
 # Some element types are defined, but do not exist in the dataset at all or should be excluded for physics reasons
 ELEM_TYPES_NONZERO = {
     Dataset.CMS.value: [1, 4, 5, 6, 8, 9, 10, 11],
+    Dataset.CMS_PHASE2.value: [1, 2],
     Dataset.CLIC.value: [1, 2],
     Dataset.CLD.value: [1, 2],
     Dataset.CLIC_HITS.value: [1, 2],
@@ -315,6 +318,7 @@ ELEM_TYPES_NONZERO = {
 
 CLASS_LABELS = {
     Dataset.CMS.value: [0, 211, 130, 1, 2, 22, 11, 13, 15],  # we never actually predict 15/taus (not there in targets)
+    Dataset.CMS_PHASE2.value: [0, 211, 130, 22, 11, 13],
     Dataset.CLIC.value: [0, 211, 130, 22, 11, 13],
     Dataset.CLD.value: [0, 211, 130, 22, 11, 13],
     Dataset.CLIC_HITS.value: [0, 211, 130, 22, 11, 13],
@@ -323,6 +327,7 @@ CLASS_LABELS = {
 
 CLASS_NAMES_LATEX = {
     Dataset.CMS.value: ["none", "Charged Hadron", "Neutral Hadron", "HFEM", "HFHAD", r"$\gamma$", r"$e^\pm$", r"$\mu^\pm$", r"$\tau$"],
+    Dataset.CMS_PHASE2.value: ["none", "Charged Hadron", "Neutral Hadron", r"$\gamma$", r"$e^\pm$", r"$\mu^\pm$"],
     Dataset.CLIC.value: ["none", "Charged Hadron", "Neutral Hadron", r"$\gamma$", r"$e^\pm$", r"$\mu^\pm$"],
     Dataset.CLD.value: ["none", "Charged Hadron", "Neutral Hadron", r"$\gamma$", r"$e^\pm$", r"$\mu^\pm$"],
     Dataset.CLIC_HITS.value: ["none", "Charged Hadron", "Neutral Hadron", r"$\gamma$", r"$e^\pm$", r"$\mu^\pm$"],
@@ -330,6 +335,7 @@ CLASS_NAMES_LATEX = {
 }
 CLASS_NAMES = {
     Dataset.CMS.value: ["none", "chhad", "nhad", "HFEM", "HFHAD", "gamma", "ele", "mu", "tau"],
+    Dataset.CMS_PHASE2.value: ["none", "chhad", "nhad", "gamma", "ele", "mu"],
     Dataset.CLIC.value: ["none", "chhad", "nhad", "gamma", "ele", "mu"],
     Dataset.CLD.value: ["none", "chhad", "nhad", "gamma", "ele", "mu"],
     Dataset.CLIC_HITS.value: ["none", "chhad", "nhad", "gamma", "ele", "mu"],
@@ -337,6 +343,7 @@ CLASS_NAMES = {
 }
 CLASS_NAMES_CAPITALIZED = {
     Dataset.CMS.value: ["none", "Charged hadron", "Neutral hadron", "HFEM", "HFHAD", "Photon", "Electron", "Muon", "Tau"],
+    Dataset.CMS_PHASE2.value: ["none", "Charged hadron", "Neutral hadron", "Photon", "Electron", "Muon"],
     Dataset.CLIC.value: ["none", "Charged hadron", "Neutral hadron", "Photon", "Electron", "Muon"],
     Dataset.CLD.value: ["none", "Charged hadron", "Neutral hadron", "Photon", "Electron", "Muon"],
     Dataset.CLIC_HITS.value: ["none", "Charged hadron", "Neutral hadron", "Photon", "Electron", "Muon"],
@@ -401,6 +408,16 @@ X_FEATURES = {
         "sigma_y",
         "sigma_z",
     ],
+    Dataset.CMS_PHASE2.value: [
+        "typ_idx", "pt", "eta", "sin_phi", "cos_phi", "e", "charge",
+        "px", "py", "pz", "em_energy", "nhits",
+        # trackster shape/timing (zero on track elements) — depth is the γ/nhad discriminator
+        "bary_z", "time", "timeerror", "ev1", "ev2", "ev3",
+        # track quality / muon-ID / vertex (zero on trackster elements) — μ/e vs charged-hadron ID
+        "muon_type", "muon_dt_hits", "muon_csc_hits",
+        "pterror", "etaerror", "phierror", "lambdaerror", "qoverperror",
+        "vx", "vy", "vz",
+    ],
     Dataset.CLIC.value: get_edm4hep_x_features(),
     Dataset.CLD.value: get_edm4hep_x_features(),
     Dataset.CLIC_HITS.value: EDM4HEP.HitFeatures.get_names(),
@@ -413,6 +430,12 @@ JET_CONFIG = {
         "r": 0.4,
         "ptcut": 3.0,
         "match_dr": 0.1,
+    },
+    Dataset.CMS_PHASE2.value: {
+        "algo": "antikt_algorithm",
+        "r": 0.4,
+        "ptcut": 3.0,
+        "match_dr": 0.2,
     },
     Dataset.CLIC.value: {
         "algo": "ee_genkt_algorithm",

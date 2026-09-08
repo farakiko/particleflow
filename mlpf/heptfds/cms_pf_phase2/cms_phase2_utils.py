@@ -1,0 +1,114 @@
+"""Data adapter: CMS Phase-2 Run3-style pkls -> TFDS tensors.
+
+Reads the run3style postprocessing output (Xelem, ytarget, ycand, genjet, targetjet,
+pythia) and produces X / ytarget / ycand in the canonical schema the MLPF training
+expects (see mlpf/conf.py: X_FEATURES['cms_phase2'], Y_FEATURES, CLASS_LABELS).
+"""
+import pickle
+import datetime
+import numpy as np
+
+from mlpf.conf import Dataset, X_FEATURES as _XF, Y_FEATURES, CLASS_LABELS
+
+DS = Dataset.CMS_PHASE2.value
+X_FEATURES = _XF[DS]
+CLS = CLASS_LABELS[DS]                 # [0, 211, 130, 22, 11, 13]
+TYP_MAP = {1: 1, 4: 2}                 # element typ -> typ_idx (track=1, trackster=2)
+NUM_SPLITS = 10
+
+
+def _cls_idx_target(pid):
+    p = abs(int(pid))
+    return CLS.index(p) if p in CLS else 0
+
+
+def _cls_idx_cand(pid, charge):
+    p = abs(int(pid))
+    if p in (22, 11, 13):
+        return CLS.index(p)
+    return CLS.index(211) if abs(charge) > 0 else CLS.index(130)  # charged vs neutral hadron
+
+
+def prepare_data_phase2(fn):
+    Xs, ytargets, ycands, genmets, genjets, targetjets, ypythias = [], [], [], [], [], [], []
+    try:
+        data = pickle.load(open(fn, "rb"))
+    except Exception as e:
+        print("Could not open {}: {}".format(fn, e))
+        return Xs, ytargets, ycands, genmets, genjets, targetjets, ypythias
+
+    for ev in data:
+        Xe, yt, yc = ev["Xelem"], ev["ytarget"], ev["ycand"]
+        n = len(Xe)
+
+        # ---- X ----
+        phi = Xe["phi"]
+        col = {
+            "typ_idx": np.array([TYP_MAP.get(int(t), 0) for t in Xe["typ"]], np.float32),
+            "pt": Xe["pt"], "eta": Xe["eta"], "sin_phi": np.sin(phi), "cos_phi": np.cos(phi),
+            "e": Xe["energy"], "charge": Xe["charge"], "px": Xe["px"], "py": Xe["py"],
+            "pz": Xe["pz"], "em_energy": Xe["em_energy"], "nhits": Xe["nhits"],
+            # extended features (pass-through from Xelem; zero-filled where the type lacks them)
+            "bary_z": Xe["bary_z"], "time": Xe["time"], "timeerror": Xe["timeerror"],
+            "ev1": Xe["ev1"], "ev2": Xe["ev2"], "ev3": Xe["ev3"],
+            "muon_type": Xe["muon_type"], "muon_dt_hits": Xe["muon_dt_hits"], "muon_csc_hits": Xe["muon_csc_hits"],
+            "pterror": Xe["pterror"], "etaerror": Xe["etaerror"], "phierror": Xe["phierror"],
+            "lambdaerror": Xe["lambdaerror"], "qoverperror": Xe["qoverperror"],
+            "vx": Xe["vx"], "vy": Xe["vy"], "vz": Xe["vz"],
+        }
+        X = np.stack([col[k] for k in X_FEATURES], axis=-1).astype(np.float32)
+
+        # ---- ytarget (canonical 14-col Y_FEATURES; col0 = class index) ----
+        yg = np.zeros((n, len(Y_FEATURES)), np.float32)
+        yg[:, 0] = [_cls_idx_target(p) for p in yt["pid"]]
+        yg[:, 1] = yt["charge"]; yg[:, 2] = yt["pt"]; yg[:, 3] = yt["eta"]
+        yg[:, 4] = yt["sin_phi"]; yg[:, 5] = yt["cos_phi"]; yg[:, 6] = yt["energy"]
+        yg[:, 7] = yt["ispu"]; yg[:, 12] = yt["jet_idx"]
+        # cols 8-11 (genStatus/simStatus/gp_to_track/gp_to_cluster) and 13 (particle_number) left 0
+
+        # ---- ycand: must be per-element aligned with X (padded/sorted alongside it).
+        # TICLCandidates are a separate reco list (not per-element), so we store zeros here;
+        # the real TICL jet baseline lives in the pkl's `candjet` (used outside training).
+        ycf = np.zeros((n, len(Y_FEATURES)), np.float32)
+
+        # ---- event-level ----
+        pyth = np.asarray(ev["pythia"], np.float32).reshape(-1, 5)
+        if len(pyth):
+            gm = float(np.hypot(np.sum(pyth[:, 1]*np.cos(pyth[:, 3])), np.sum(pyth[:, 1]*np.sin(pyth[:, 3]))))
+        else:
+            gm = 0.0
+
+        Xs.append(X); ytargets.append(yg); ycands.append(ycf); genmets.append(np.float32(gm))
+        genjets.append(np.asarray(ev["genjet"], np.float32).reshape(-1, 4))
+        targetjets.append(np.asarray(ev["targetjet"], np.float32).reshape(-1, 4))
+        ypythias.append(pyth)
+    return Xs, ytargets, ycands, genmets, genjets, targetjets, ypythias
+
+
+def split_list(lst, x):
+    s = len(lst) // x
+    r = [lst[i*s:(i+1)*s] for i in range(x - 1)]
+    r.append(lst[(x-1)*s:])
+    return r
+
+
+def split_sample(path, builder_config, num_splits=NUM_SPLITS, train_frac=0.9):
+    files = sorted(list(path.glob("*.pkl")))
+    print("Found {} files in {}".format(len(files), path))
+    assert len(files) > 0
+    idx = int(train_frac * len(files))
+    ftr, fte = files[:idx], files[idx:]
+    si = int(builder_config.name) - 1
+    return {"train": generate_examples(split_list(ftr, num_splits)[si]),
+            "test": generate_examples(split_list(fte, num_splits)[si])}
+
+
+def generate_examples(files):
+    for fi in files:
+        print(datetime.datetime.now(), "reading", fi)
+        Xs, ytg, yc, gm, gj, tj, yp = prepare_data_phase2(str(fi))
+        for ii in range(len(Xs)):
+            yield str(fi) + "_" + str(ii), {
+                "X": Xs[ii], "ytarget": ytg[ii], "ycand": yc[ii],
+                "genmet": gm[ii], "genjets": gj[ii], "targetjets": tj[ii], "pythia": yp[ii],
+            }

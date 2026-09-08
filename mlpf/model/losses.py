@@ -40,15 +40,17 @@ def sliced_wasserstein_loss(y_pred, y_true, num_projections=200):
     return ret
 
 
-def classification_loss(y, ypred):
-    """Compute per-element particle-presence and particle-ID losses."""
+def classification_loss(y, ypred, class_weights=None):
+    """Compute per-element particle-presence and particle-ID losses.
+
+    class_weights: optional per-class (length num_classes) focal-loss alpha for imbalance."""
     cls_id = y["cls_id"]
     num_elements = cls_id.numel()
     is_particle = cls_id != 0
 
     binary = 10.0 * F.cross_entropy(ypred["cls_binary"], is_particle.long())
 
-    pid_per_element = FocalLoss(gamma=2.0, reduction="none")(ypred["cls_id_onehot"], cls_id)
+    pid_per_element = FocalLoss(alpha=class_weights, gamma=2.0, reduction="none")(ypred["cls_id_onehot"], cls_id)
     pid_per_element = torch.where(is_particle, pid_per_element, torch.zeros_like(pid_per_element))
     pid = pid_per_element.sum() / num_elements
 
@@ -77,14 +79,14 @@ def regression_loss(y, ypred, input_pt, regression_weights):
     return losses
 
 
-def particle_loss(y, ypred, input_pt, regression_weights):
+def particle_loss(y, ypred, input_pt, regression_weights, class_weights=None):
     """Compute classification and regression losses over flattened particles."""
-    losses = classification_loss(y, ypred)
+    losses = classification_loss(y, ypred, class_weights)
     losses.update(regression_loss(y, ypred, input_pt, regression_weights))
     return losses
 
 
-def event_loss(y, ypred, batch, regression_weights):
+def event_loss(y, ypred, batch, regression_weights, class_weights=None):
     """Compute losses for complete padded event batches.
 
     The standard loss currently contains only independent particle terms.
@@ -104,12 +106,12 @@ def event_loss(y, ypred, batch, regression_weights):
     }
     input_pt = batch.X[..., 1][valid]
 
-    return particle_loss(particle_targets, particle_predictions, input_pt, regression_weights)
+    return particle_loss(particle_targets, particle_predictions, input_pt, regression_weights, class_weights)
 
 
-def mlpf_loss(y, ypred, batch, regression_weights):
+def mlpf_loss(y, ypred, batch, regression_weights, class_weights=None):
     """Compute the standard MLPF objective for a batch of events."""
-    loss = event_loss(y, ypred, batch, regression_weights)
+    loss = event_loss(y, ypred, batch, regression_weights, class_weights)
 
     loss_opt = sum(loss.values())
     loss["Total"] = loss_opt
