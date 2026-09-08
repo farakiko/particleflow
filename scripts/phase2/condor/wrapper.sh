@@ -20,8 +20,11 @@ EOS_REDIR=${EOS_REDIR:-root://eosuser.cern.ch}
 EOS_PATH=${EOS_PATH:-/eos/user/f/fmokhtar/mlpf/phase2/pkl_run3style}
 
 echo "=== job ${JOB_INDEX} on $(hostname) $(date) ==="
+# LCG/venv setup scripts are not `set -u`-clean (e.g. reference an unset COMPILER) -> relax around sourcing
+set +u
 source "${LCG_SETUP}"
 source "${MLPF_VENV}/bin/activate"
+set -u
 python3 -c "import uproot,awkward,numpy,fastjet,vector" || { echo "ENV MISSING PACKAGES (see setup_venv.sh)"; exit 1; }
 
 START=$(( JOB_INDEX * FILES_PER_JOB + 1 ))
