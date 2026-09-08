@@ -44,7 +44,11 @@ while IFS= read -r ROOT; do
   fi
   echo "--- ${ROOT}"
   if python3 postprocessing_run3style.py --input "${ROOT}" --output "${out}"; then
-    if xrdcp -f "${out}" "${EOS_REDIR}/${dst}"; then ok=$((ok+1)); else echo "XRDCP FAIL ${out}"; fail=$((fail+1)); fi
+    if [ -f "${out}" ]; then
+      if xrdcp -f "${out}" "${EOS_REDIR}/${dst}"; then ok=$((ok+1)); else echo "XRDCP FAIL ${out}"; fail=$((fail+1)); fi
+    else
+      echo "empty/corrupt input (no output) -> skip ${ROOT}"; skip=$((skip+1))
+    fi
   else
     echo "POSTPROC FAIL ${ROOT}"; fail=$((fail+1))
   fi

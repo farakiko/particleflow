@@ -199,8 +199,16 @@ def process_event(E, iev):
 
 def process(infile, outfile, num_events=-1):
     print(f"opening {infile}")
-    E = uproot.open(infile)["Events"].arrays(BRANCHES)
+    try:
+        tree = uproot.open(infile)["Events"]
+    except uproot.KeyInFileError:
+        print("  WARNING: no 'Events' tree (empty/corrupt file) -> skipping, no output written")
+        return
+    E = tree.arrays(BRANCHES)
     n = len(E) if num_events < 0 else min(num_events, len(E))
+    if n == 0:
+        print("  WARNING: 0 events -> skipping, no output written")
+        return
     out = []
     for iev in range(n):
         out.append(process_event(E, iev))
