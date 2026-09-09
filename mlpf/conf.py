@@ -417,6 +417,9 @@ X_FEATURES = {
         "muon_type", "muon_dt_hits", "muon_csc_hits",
         "pterror", "etaerror", "phierror", "lambdaerror", "qoverperror",
         "vx", "vy", "vz",
+        # track-density around the trackster (zero on track elements) — charged/neutral proximity
+        "min_dR_track", "near_track_pt", "sum_pt_dR10",
+        "n_trk_dR01", "n_trk_dR02", "n_trk_dR03", "n_trk_dR04", "n_trk_dR05",
     ],
     Dataset.CLIC.value: get_edm4hep_x_features(),
     Dataset.CLD.value: get_edm4hep_x_features(),

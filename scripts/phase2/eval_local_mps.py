@@ -58,13 +58,13 @@ def cluster(pt, eta, phi, e):
     return np.array([[x.pt(), x.eta(), x.phi(), x.e()] for x in j]) if j else np.zeros((0, 4))
 
 
-def load_val():
+def load_val(pkl_subdir="pkl_run3style"):
     """Replicate training's val split: same order + shuffle(seed 0), first 10%.
     Also pull the TICL baseline (candjet + ycand) straight from the raw pkl, which
     the adapter does not expose. raw[i] aligns with the adapter's i-th event."""
     evs = []
     for s in ["ttbar_0pu", "qcd_0pu", "zll_0pu"]:
-        for f in sorted(glob.glob(f"{NANO}/{s}/pkl_run3style/*.pkl")):
+        for f in sorted(glob.glob(f"{NANO}/{s}/{pkl_subdir}/*.pkl")):
             Xs, ytg, yc, gm, gj, tj, yp = adapter.prepare_data_phase2(f)
             raw = pickle.load(open(f, "rb"))
             for i in range(len(Xs)):
@@ -81,6 +81,7 @@ def main():
     ap.add_argument("--ckpt", default=os.path.join(REPO, "experiments/phase2_local/checkpoints/best.pth"))
     ap.add_argument("--outdir", default=os.path.join(REPO, "plots/phase2/mlpf_eval"))
     ap.add_argument("--device", default="mps" if torch.backends.mps.is_available() else "cpu")
+    ap.add_argument("--pkl-subdir", default="pkl_run3style", help="per-sample pkl subdir (e.g. pkl_clue3d / pkl_links)")
     a = ap.parse_args(); os.makedirs(a.outdir, exist_ok=True)
 
     ck = torch.load(a.ckpt, map_location="cpu")
@@ -90,7 +91,7 @@ def main():
     model.eval().to(a.device)
     print(f"loaded {a.ckpt} (epoch {ck.get('epoch','?')}, val {ck.get('val_loss','?')})")
 
-    val = load_val(); print(f"val events: {len(val)}")
+    val = load_val(a.pkl_subdir); print(f"val events: {len(val)}")
     NAMES = [r[0] for r in RECO]
 
     # accumulators
@@ -109,8 +110,8 @@ def main():
     with torch.no_grad():
         for bi in range(0, len(val), B):
             evb = val[bi:bi+B]
-            N = max(len(e["X"]) for e in evb)
-            X = np.zeros((len(evb), N, 12), np.float32); mask = np.zeros((len(evb), N), bool)
+            N = max(len(e["X"]) for e in evb); nf = evb[0]["X"].shape[1]
+            X = np.zeros((len(evb), N, nf), np.float32); mask = np.zeros((len(evb), N), bool)
             for i, e in enumerate(evb):
                 X[i, :len(e["X"])] = e["X"]; mask[i, :len(e["X"])] = True
             Xt = torch.tensor(X, device=a.device); mk = torch.tensor(mask, device=a.device)

@@ -55,6 +55,9 @@ def prepare_data_phase2(fn):
             "pterror": Xe["pterror"], "etaerror": Xe["etaerror"], "phierror": Xe["phierror"],
             "lambdaerror": Xe["lambdaerror"], "qoverperror": Xe["qoverperror"],
             "vx": Xe["vx"], "vy": Xe["vy"], "vz": Xe["vz"],
+            "min_dR_track": Xe["min_dR_track"], "near_track_pt": Xe["near_track_pt"], "sum_pt_dR10": Xe["sum_pt_dR10"],
+            "n_trk_dR01": Xe["n_trk_dR01"], "n_trk_dR02": Xe["n_trk_dR02"], "n_trk_dR03": Xe["n_trk_dR03"],
+            "n_trk_dR04": Xe["n_trk_dR04"], "n_trk_dR05": Xe["n_trk_dR05"],
         }
         X = np.stack([col[k] for k in X_FEATURES], axis=-1).astype(np.float32)
 

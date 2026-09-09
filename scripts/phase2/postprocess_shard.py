@@ -35,6 +35,8 @@ def main():
     ap.add_argument("--num-shards", type=int, default=1, help="total number of shards")
     ap.add_argument("--num-events", type=int, default=-1, help="limit events/file (default all; use for a smoke test)")
     ap.add_argument("--max-files", type=int, default=-1, help="cap files this shard processes (for a quick test pod)")
+    ap.add_argument("--calo", choices=["clue3d", "links"], default="clue3d",
+                    help="calo collection passed to postprocessing (clue3d pre-linking / links CMSSW-merged)")
     ap.add_argument("--overwrite", action="store_true", help="reprocess even if the output pkl already exists")
     a = ap.parse_args()
 
@@ -60,7 +62,7 @@ def main():
         os.makedirs(outdir, exist_ok=True)
         tmp = outfile + f".tmp.{a.shard_index}"
         try:
-            process(root, tmp, a.num_events)   # writes the pkl to tmp
+            process(root, tmp, a.num_events, a.calo)   # writes the pkl to tmp
             os.replace(tmp, outfile)           # atomic publish on the same filesystem
             ok += 1
             print(f"[{i+1}/{len(mine)}] OK   {rel}", flush=True)

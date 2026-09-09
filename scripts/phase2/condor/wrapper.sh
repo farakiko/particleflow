@@ -9,7 +9,8 @@
 #   MLPF_VENV      venv with fastjet on /afs        (default /afs/cern.ch/work/f/fmokhtar/private/mlpf_env)
 #   LCG_SETUP      cvmfs LCG view (uproot/awkward/numpy/vector)
 #   EOS_REDIR      xrootd redirector                (default root://eosuser.cern.ch)
-#   EOS_PATH       output base dir on eos           (default /eos/user/f/fmokhtar/mlpf/phase2/pkl_run3style)
+#   EOS_PATH       output base dir on eos           (default /eos/user/f/fmokhtar/mlpf/phase2/pkl_links)
+#   CALO           calo collection for postprocessing (default links; clue3d for the other variant)
 set -u
 JOB_INDEX=$1
 FILELIST=$2
@@ -17,9 +18,10 @@ FILES_PER_JOB=${FILES_PER_JOB:-10}
 MLPF_VENV=${MLPF_VENV:-/afs/cern.ch/work/f/fmokhtar/private/mlpf_env}
 LCG_SETUP=${LCG_SETUP:-/cvmfs/sft.cern.ch/lcg/views/LCG_106/x86_64-el9-gcc13-opt/setup.sh}
 EOS_REDIR=${EOS_REDIR:-root://eosuser.cern.ch}
-EOS_PATH=${EOS_PATH:-/eos/user/f/fmokhtar/mlpf/phase2/pkl_run3style}
+EOS_PATH=${EOS_PATH:-/eos/user/f/fmokhtar/mlpf/phase2/pkl_links}
+CALO=${CALO:-links}
 
-echo "=== job ${JOB_INDEX} on $(hostname) $(date) ==="
+echo "=== job ${JOB_INDEX} on $(hostname) calo=${CALO} $(date) ==="
 # LCG/venv setup scripts are not `set -u`-clean (e.g. reference an unset COMPILER) -> relax around sourcing
 set +u
 source "${LCG_SETUP}"
@@ -43,7 +45,7 @@ while IFS= read -r ROOT; do
     echo "skip (exists) ${sample}/${out}"; skip=$((skip+1)); continue
   fi
   echo "--- ${ROOT}"
-  if python3 postprocessing_run3style.py --input "${ROOT}" --output "${out}"; then
+  if python3 postprocessing_run3style.py --input "${ROOT}" --output "${out}" --calo "${CALO}"; then
     if [ -f "${out}" ]; then
       if xrdcp -f "${out}" "${EOS_REDIR}/${dst}"; then ok=$((ok+1)); else echo "XRDCP FAIL ${out}"; fail=$((fail+1)); fi
     else

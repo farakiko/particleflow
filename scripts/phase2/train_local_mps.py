@@ -37,10 +37,10 @@ def build_config(nc, nh, hd):
     )
 
 
-def load_events(samples, max_files):
+def load_events(samples, max_files, pkl_subdir="pkl_run3style"):
     evs = []
     for s in samples:
-        fs = sorted(glob.glob(f"{NANO}/{s}/pkl_run3style/*.pkl"))
+        fs = sorted(glob.glob(f"{NANO}/{s}/{pkl_subdir}/*.pkl"))
         if max_files > 0: fs = fs[:max_files]
         for f in fs:
             Xs, ytg, *_ = adapter.prepare_data_phase2(f)
@@ -92,6 +92,8 @@ def main():
     ap.add_argument("--device", default="mps" if torch.backends.mps.is_available() else "cpu")
     ap.add_argument("--class-weight-beta", type=float, default=0.5,
                     help="focal-alpha exponent on inverse class frequency (0=off, 0.5=sqrt-inv, 1=inv)")
+    ap.add_argument("--pkl-subdir", default="pkl_run3style",
+                    help="per-sample pkl subdir to train on (e.g. pkl_clue3d / pkl_links)")
     a = ap.parse_args()
 
     os.makedirs(a.outdir, exist_ok=True); os.makedirs(os.path.join(a.outdir, "checkpoints"), exist_ok=True)
@@ -103,7 +105,7 @@ def main():
     print(f"model params: {sum(p.numel() for p in model.parameters())/1e6:.2f}M "
           f"| input_dim={cfg.input_dim} num_classes={cfg.num_classes} convs={a.num_convs}", flush=True)
 
-    t0 = time.time(); evs = load_events(a.samples, a.max_files)
+    t0 = time.time(); evs = load_events(a.samples, a.max_files, a.pkl_subdir)
     nval = max(1, len(evs) // 10); val, train = evs[:nval], evs[nval:]
     print(f"loaded {len(evs)} events in {time.time()-t0:.0f}s | train={len(train)} val={len(val)}", flush=True)
 
