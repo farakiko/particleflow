@@ -125,3 +125,11 @@ collection, the two *target definitions* differ as:
 **Conclusion:** v2 = **links collection (v1's) + complete, uncut, one-per-particle target (ours)** — near-
 unity jet scale and high efficiency, at a higher (mostly-secondary) fake rate. v1's cuts/filter trade
 ~25–30% of hadronic jet energy for purity. Plots: `plots/phase2/final_target_<sample>/` (v2=red, v1=blue).
+
+**Endcap cut (2026-09-09):** the target is now explicitly restricted to `1.5<|eta|<3` in
+`postprocessing_run3style.py` (a truth particle becomes a target only in that range), so the training
+target matches the gen acceptance used in all plots — drops the ~19% barrel charged tracks + the
+forward |eta|>3 tail that leaked in via all-eta GeneralTracks. Per-class eta distributions
+(gen/v1/v2) in `plots/phase2/final_target_<sample>/eta_<class>.pdf` show v2 cleanly in ±[1.5,3];
+v1 sits at |eta|>1.5 but spills into the forward region. Plotters: `sumpt_perevent_comparison.py`,
+`eta_distribution_comparison.py`, `final_target_comparison.py`.
