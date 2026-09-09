@@ -26,6 +26,7 @@ NEUTRINOS    = {12, 14, 16}
 SENTINEL     = -2147483648
 JETDEF       = fastjet.JetDefinition(fastjet.antikt_algorithm, 0.4)
 JET_PT_MIN   = 3.0
+ENDCAP_LO, ENDCAP_HI = 1.5, 3.0   # HGCAL acceptance: target particles restricted to the endcap
 
 # calo collection choice (the only thing that differs between the two variants)
 CALO = {"clue3d": "ticlTrackstersCLUE3DHigh", "links": "ticlTracksterLinks"}
@@ -165,6 +166,10 @@ def process_event(E, iev, ts):
 
     elem_to_parts = defaultdict(list)
     for i in range(len(pid)):
+        # HGCAL endcap only: a truth particle becomes a target only if it's in 1.5<|eta|<3
+        # (drops barrel charged tracks + the forward |eta|>3 tail; keeps target == gen acceptance)
+        if not (ENDCAP_LO <= abs(float(ceta[i])) <= ENDCAP_HI):
+            continue
         charged = (abs(int(pid[i])) in CHARGED_PIDS) and (int(ctrk[i]) != SENTINEL)
         if charged:
             ti = int(ctrk[i])
