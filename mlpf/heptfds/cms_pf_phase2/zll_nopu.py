@@ -9,7 +9,7 @@ from mlpf.conf import Y_FEATURES  # noqa: E402
 
 _DESCRIPTION = "CMS Phase-2 HGCAL/TICL NanoAOD, Run3-style target (tracks + CLUE3D tracksters). Z->ll 0 PU."
 _CITATION = ""
-_SAMPLE_DIR = "zll_0pu/pkl_run3style"
+_SAMPLE_DIR = os.path.normpath(os.path.join("zll_0pu", os.environ.get("PHASE2_PKL_SUBDIR", "pkl_run3style")))
 _CLASS_NAME = "CmsPfPhase2ZllNopu"
 
 

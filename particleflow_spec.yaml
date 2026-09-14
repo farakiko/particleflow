@@ -390,6 +390,31 @@ productions:
         version: "3.2.0"
         config_ids: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
 
+  # CMS Phase-2 (HGCAL/TICL, Run3-style v2 target) on the CERN NGT k8s cluster.
+  # pkls are produced externally (lxplus condor -> /eos, see scripts/phase2/condor/),
+  # so there are no gen/postprocessing sections here — only the tfds layout + training.
+  # tfds are built from the /eos pkls onto /shared (see kube/README-train.md).
+  cms_phase2_ngt:
+    type: "cms_phase2"
+    model: "pyg-cms-phase2-v1"
+    comment: "Phase-2 TICL: tracks + CLUE3D tracksters, Run3-style v2 target, ttbar/qcd/zll 0PU"
+    workspace_dir: "/shared/mlpf/phase2" # tfds under ${workspace_dir}/tfds; overridable with --data-dir
+    config_dir: "/shared/particleflow"
+
+    tfds_mapping:
+      ttbar_nopu:
+        builder_path: "mlpf/heptfds/cms_pf_phase2/ttbar_nopu"
+        version: "1.0.0"
+        config_ids: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+      qcd_nopu:
+        builder_path: "mlpf/heptfds/cms_pf_phase2/qcd_nopu"
+        version: "1.0.0"
+        config_ids: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+      zll_nopu:
+        builder_path: "mlpf/heptfds/cms_pf_phase2/zll_nopu"
+        version: "1.0.0"
+        config_ids: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+
 # -----------------------------------------------------------------------------
 # Model Configurations
 # Defines training recipes. Can inherit from defaults or other models.
@@ -758,4 +783,47 @@ models:
         splits: ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"]
       - name: "clic_edm_qq_hits"
         version: "3.2.0"
+        splits: ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"]
+
+  # CMS Phase-2: tracks + CLUE3D tracksters, Run3-style v2 target (docs/phase2.md 4A/10).
+  # Architecture = the settled Phase-2 sizing: embed 256 (16 heads x 16 dim), 3 convs, ~2.7M params.
+  # Trained on the NGT k8s cluster (production cms_phase2_ngt); see kube/README-train.md.
+  pyg-cms-phase2-v1:
+    <<: *defaults
+    dataset: cms_phase2
+    gpu_batch_multiplier: 4
+
+    hyperparameters:
+      batch_size: 1
+      lr: 0.0004
+
+    architecture:
+      type: "attention"
+      input_encoding: "split"
+      attention:
+        num_convs: 3
+        head_dim: 16
+        num_heads: 16
+
+    # ttbar first; add cms_pf_phase2_qcd_nopu / cms_pf_phase2_zll_nopu here
+    # once their tfds are built on /shared (storage budget permitting).
+    train_datasets:
+      physical:
+        batch_size: 16
+        samples:
+          - name: "cms_pf_phase2_ttbar_nopu"
+            version: "1.0.0"
+            splits: ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"]
+
+    validation_datasets:
+      physical:
+        batch_size: 16
+        samples:
+          - name: "cms_pf_phase2_ttbar_nopu"
+            version: "1.0.0"
+            splits: ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"]
+
+    test_datasets:
+      - name: "cms_pf_phase2_ttbar_nopu"
+        version: "1.0.0"
         splits: ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"]

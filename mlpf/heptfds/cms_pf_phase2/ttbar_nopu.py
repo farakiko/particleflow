@@ -9,7 +9,9 @@ from mlpf.conf import Y_FEATURES  # noqa: E402
 
 _DESCRIPTION = "CMS Phase-2 HGCAL/TICL NanoAOD, Run3-style target (tracks + CLUE3D tracksters). ttbar 0 PU."
 _CITATION = ""
-_SAMPLE_DIR = "ttbar_0pu/pkl_run3style"
+# local layout: <manual_dir>/ttbar_0pu/pkl_run3style/*.pkl ; eos production layout
+# (pkl_links_v2): <manual_dir>/ttbar_0pu/*.pkl -> set PHASE2_PKL_SUBDIR=.
+_SAMPLE_DIR = os.path.normpath(os.path.join("ttbar_0pu", os.environ.get("PHASE2_PKL_SUBDIR", "pkl_run3style")))
 _CLASS_NAME = "CmsPfPhase2TtbarNopu"
 
 

@@ -310,3 +310,50 @@ features (need derivation; revisit if e/chad still confuses).
 
 **Next:** retrain on the 29-feature pkls with embed 256 (+ focal-α class weighting still to add) and
 re-check the §8 confusion matrix / classification-ceiling plot to confirm the gaps close.
+
+---
+
+## 11. Cluster training setup — NGT k8s (designed 2026-09-14)
+
+Full production v2 pkls live on eos: `/eos/user/f/fmokhtar/mlpf/phase2/pkl_links_v2/{ttbar,qcd,zll}_0pu`
+(37-field `Xelem` → 38 model features; v1 = colleague's target still running on condor).
+Runbook with all commands: **`kube/README-train.md`**; smoke pod: `kube/train-pod.yml`.
+
+**Decisions:**
+- **Format = tfds/ArrayRecord** (not raw pkl): the `mlpf/heptfds/cms_pf_phase2` builders already
+  exist, and the canonical `mlpf` pipeline (PFDataset/samplers/DDP/checkpointing) assumes tfds with
+  random access — `train_local_mps.py`-style load-all-in-RAM does not scale to ~16M events. The
+  only reason we bypassed tfds locally was array_record being linux-only; the cluster is linux.
+- **tfds storage = `/shared/mlpf/phase2/tfds`** (500Gi RWX PVC). eos-fuse is fine for the one-pass
+  *build* reads but too slow/flaky for random-access training reads. ttbar first; full 3-sample set
+  is ~0.5 TB [est. from local pkl sizes: ttbar ~165G, qcd ~326G, zll ~53G] and won't all fit —
+  measure the real pkl→tfds ratio on ttbar, then decide (cap qcd / 2nd PVC / prune).
+- **Env = persistent uv venv `/shared/envs/mlpf`**, built once with `uv sync` from `pyproject.toml`
+  (upstream-canonical, cf. `uv.singularity`): repo-pinned torch 2.11+cu128, tf 2.20, tfds 4.9.9,
+  array-record, fastjet, comet-ml. The `registry.cern.ch/ngt/pytorch:2.3.1` image is only the
+  OS/toolchain base — its torch 2.3.1 is 8 minor versions behind the repo pin, and "install the
+  missing libs at pod start" would reinstall ~15 heavy packages every time. Venv persists; pods stay stateless.
+- **GPU = 1× `nvidia.com/mig-1g.12gb`** (H100-NVL MIG slice, the known-good profile from
+  `kube/pod.yml`) — ample for the 2.7M-param model at 0 PU. Bigger profiles unknown (RBAC is
+  namespace-scoped, nodes not listable); discover via Pending-pod scheduler events when scaling up.
+
+**Repo changes (VERIFIED parsing locally via `MLPFConfig.from_spec`: input_dim 38, 6 classes,
+train/valid/test = `cms_pf_phase2_ttbar_nopu:1.0.0` splits 1–10):**
+- `particleflow_spec.yaml`: + production `cms_phase2_ngt` (workspace `/shared/mlpf/phase2`) and
+  model `pyg-cms-phase2-v1` (attention, 3 convs, 16 heads × head_dim 16 = embed 256 → ~2.7M, §10
+  sizing; lr 4e-4, bs 16 × gpu_batch_multiplier 4).
+- `mlpf/heptfds/cms_pf_phase2/{ttbar,qcd,zll}_nopu.py`: `_SAMPLE_DIR` now env-adjustable
+  (`PHASE2_PKL_SUBDIR=.` → eos layout `pkl_links_v2/<sample>/*.pkl`).
+- `kube/train-pod.yml` (+`kube/README-train.md`): explicit shared-PVC mount, **no
+  `vscode-in-shared` label** (its init container hangs batch pods — this is what wedged
+  `pf-postprocess-test` in Terminating for 6 days; kubelet `FailedKillPod DeadlineExceeded` on
+  `vscode-mkdir-eos-target`; left alone, never force-delete).
+
+**Gotcha [VERIFIED]:** local laptop pkls are the stale **28-field** schema — the current adapter
+requires the v2 **37-field** pkls (gsf_type + track-density), so builder tests must read eos files.
+
+**Smoke-run pass criteria (§ runbook step 5):** image GPU sanity → env import sanity (~2.7M param
+count) → ttbar tfds config builds → 300-step 1-GPU train with decreasing loss + checkpoint on /shared.
+
+**[OPEN]** after smoke: full ttbar tfds (10 configs ∥), first real training as a k8s Job (not
+interactive pod), qcd/zll tfds pending storage math, v1-target builders once condor finishes.
