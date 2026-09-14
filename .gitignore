@@ -59,4 +59,7 @@ build
 
 data/cms/phase2/
 .staging
-kube/
+# personal pod specs stay untracked, but the phase2 training pod + runbook are canonical
+kube/*
+!kube/train-pod.yml
+!kube/README-train.md

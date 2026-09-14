@@ -1,0 +1,46 @@
+# Interactive smoke-test pod for MLPF Phase-2 training on the NGT k8s cluster.
+# Full runbook: kube/README-train.md
+#
+# Design notes (lessons already learned on this cluster):
+#   - Do NOT use the `vscode-in-shared` label on batch/training pods — its init
+#     container hangs and the pod can wedge in Terminating (see pf-postprocess-test).
+#     The shared PVC is mounted explicitly instead (RW: we write env/tfds/checkpoints).
+#   - GPU request = 1x MIG slice `nvidia.com/mig-1g.12gb` on an H100-NVL node —
+#     the known-good profile from kube/pod.yml. Plenty for the ~2.7M-param model.
+#     If the pod sits Pending: `kubectl describe pod pf-train-smoke` — the scheduler
+#     events enumerate per-node reasons and reveal what GPU resources actually exist.
+#   - Image: registry.cern.ch/ngt/pytorch:2.3.1 is only the OS/toolchain base; the
+#     training env is a persistent uv venv on /shared (/shared/envs/mlpf) with the
+#     repo-pinned torch, so the image's torch 2.3.1 is not what training runs on.
+#   - Cleanup: `kubectl delete pod pf-train-smoke` (normal delete ONLY — never force).
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pf-train-smoke
+  labels:
+    home: "eos"
+    mount-eos: "true"
+spec:
+  restartPolicy: Never
+  volumes:
+  - name: shared
+    persistentVolumeClaim:
+      claimName: shared
+  containers:
+  - name: train
+    image: registry.cern.ch/ngt/pytorch:2.3.1
+    command: ["sleep", "infinity"]
+    env:
+    - {name: PHASE2_PKL_SUBDIR, value: "."}   # eos pkl layout: pkl_links_v2/<sample>/*.pkl
+    - {name: PYTHONUNBUFFERED, value: "1"}
+    volumeMounts:
+    - name: shared
+      mountPath: /shared
+    resources:
+      requests: {cpu: "4", memory: "8Gi"}
+      limits:
+        cpu: "16"
+        memory: "32Gi"
+        nvidia.com/mig-1g.12gb: 1
+  nodeSelector:
+    nvidia.com/gpu.product: NVIDIA-H100-NVL

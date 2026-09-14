@@ -110,7 +110,12 @@ def split_sample(path, builder_config, num_splits=NUM_SPLITS, train_frac=0.9):
 def generate_examples(files):
     for fi in files:
         print(datetime.datetime.now(), "reading", fi)
-        Xs, ytg, yc, gm, gj, tj, yp = prepare_data_phase2(str(fi))
+        try:
+            Xs, ytg, yc, gm, gj, tj, yp = prepare_data_phase2(str(fi))
+        except Exception as e:
+            # one malformed/stale-schema file must not kill an hours-long tfds build
+            print("Skipping {}: {}".format(fi, e))
+            continue
         for ii in range(len(Xs)):
             yield str(fi) + "_" + str(ii), {
                 "X": Xs[ii], "ytarget": ytg[ii], "ycand": yc[ii],

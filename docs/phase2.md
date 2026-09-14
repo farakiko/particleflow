@@ -324,7 +324,7 @@ Runbook with all commands: **`kube/README-train.md`**; smoke pod: `kube/train-po
   exist, and the canonical `mlpf` pipeline (PFDataset/samplers/DDP/checkpointing) assumes tfds with
   random access — `train_local_mps.py`-style load-all-in-RAM does not scale to ~16M events. The
   only reason we bypassed tfds locally was array_record being linux-only; the cluster is linux.
-- **tfds storage = `/shared/mlpf/phase2/tfds`** (500Gi RWX PVC). eos-fuse is fine for the one-pass
+- **tfds storage = `/shared/mlpf-phase2/tfds`** (500Gi RWX PVC). eos-fuse is fine for the one-pass
   *build* reads but too slow/flaky for random-access training reads. ttbar first; full 3-sample set
   is ~0.5 TB [est. from local pkl sizes: ttbar ~165G, qcd ~326G, zll ~53G] and won't all fit —
   measure the real pkl→tfds ratio on ttbar, then decide (cap qcd / 2nd PVC / prune).
@@ -339,7 +339,7 @@ Runbook with all commands: **`kube/README-train.md`**; smoke pod: `kube/train-po
 
 **Repo changes (VERIFIED parsing locally via `MLPFConfig.from_spec`: input_dim 38, 6 classes,
 train/valid/test = `cms_pf_phase2_ttbar_nopu:1.0.0` splits 1–10):**
-- `particleflow_spec.yaml`: + production `cms_phase2_ngt` (workspace `/shared/mlpf/phase2`) and
+- `particleflow_spec.yaml`: + production `cms_phase2_ngt` (workspace `/shared/mlpf-phase2`) and
   model `pyg-cms-phase2-v1` (attention, 3 convs, 16 heads × head_dim 16 = embed 256 → ~2.7M, §10
   sizing; lr 4e-4, bs 16 × gpu_batch_multiplier 4).
 - `mlpf/heptfds/cms_pf_phase2/{ttbar,qcd,zll}_nopu.py`: `_SAMPLE_DIR` now env-adjustable
@@ -357,3 +357,27 @@ count) → ttbar tfds config builds → 300-step 1-GPU train with decreasing los
 
 **[OPEN]** after smoke: full ttbar tfds (10 configs ∥), first real training as a k8s Job (not
 interactive pod), qcd/zll tfds pending storage math, v1-target builders once condor finishes.
+
+**Execution log (2026-09-14, all VERIFIED on cluster):**
+- v2 production on eos: ttbar **15,399** pkls (of 18,488 inputs — condor stragglers, mop-up
+  later), qcd 25,136, zll 18,206; all written 12:45–13:27 the same day; schema-uniform
+  **37-field** (18/18 spot-checked + oldest/newest mtime scan — no stale pre-GSF admixture).
+- **⚠ EOS user area over quota**: even 0-byte writes to `/eos/user/f/fmokhtar` fail → v1
+  condor jobs writing `pkl_links_v1` are presumably failing; reads unaffected. All cluster
+  scripts set `HOME=/shared/mlpf-phase2/home` to keep dotfiles/caches off eos.
+- Env `/shared/envs/mlpf` built via `scripts/phase2/cluster/env_build.sh` (uv sync, 320 pkgs,
+  cache on /scratch NVMe): **torch 2.11.0+cu128 on MIG 1g.12gb (driver 590.48)**, tfds/
+  array_record/fastjet/comet import, **MLPF from spec = 2.72M params, input_dim 38**.
+  Gotcha: `uv pip` ignores `UV_PROJECT_ENVIRONMENT` → editable install needs `--python`.
+- `/shared`: 225G free at start; `/scratch` = node-local NVMe (~640G free), used for caches
+  only (ephemeral). `/shared/mlpf` is a pre-existing unrelated project → phase2 workspace
+  moved to **`/shared/mlpf-phase2/`**.
+- **tfds sizing (measured on 900 real events)**: serialized proto 56 KB/ev; tfds's stock
+  ArrayRecord writer compresses to **18.9 KB/ev → full ttbar (4.6M ev) ≈ 87 GB** — fits /shared.
+  Dropping the all-zero `ycand` or tuning writer options gains ~nothing post-compression →
+  schema unchanged, stock tfds. Gotcha: the build's shuffle stage transiently writes ~3×
+  final size as uncompressed temp buckets → build on **/scratch NVMe** (waves of 5 configs),
+  rsync final ~87 GB to `/shared/mlpf-phase2/tfds` (= upstream's job_scratch pattern).
+  First 10-way /shared-direct build was stopped for exactly this; ~10 min lost, no residue.
+- Projected all-3-samples tfds ≈ 87 (ttbar) + ~230 (qcd, bigger events) + ~45 (zll) ≈
+  **360 GB > 206 GB free** → ttbar-only first training; qcd/zll need capping or a /shared cleanup.

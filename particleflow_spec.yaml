@@ -398,7 +398,8 @@ productions:
     type: "cms_phase2"
     model: "pyg-cms-phase2-v1"
     comment: "Phase-2 TICL: tracks + CLUE3D tracksters, Run3-style v2 target, ttbar/qcd/zll 0PU"
-    workspace_dir: "/shared/mlpf/phase2" # tfds under ${workspace_dir}/tfds; overridable with --data-dir
+    # NB: NOT /shared/mlpf — that is a pre-existing unrelated project dir on the PVC.
+    workspace_dir: "/shared/mlpf-phase2" # tfds under ${workspace_dir}/tfds; overridable with --data-dir
     config_dir: "/shared/particleflow"
 
     tfds_mapping:
