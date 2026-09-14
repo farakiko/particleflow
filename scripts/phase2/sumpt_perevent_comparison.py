@@ -56,11 +56,15 @@ def main():
     for s in a.samples:
         fl = sorted(glob.glob(f"{NANO}/{s}/pkl_links/*.pkl"))
         fm = sorted(glob.glob(f"{NANO}/{s}/pkl_mohamed/moh_*.pkl"))
+        fv3 = sorted(glob.glob(f"{NANO}/{s}/pkl_v3/*.pkl"))
         gen = perevent_sumpt(fl, "gen"); v2 = perevent_sumpt(fl, "target"); v1 = perevent_sumpt(fm, "target")
+        v3 = perevent_sumpt(fv3, "target") if fv3 else None
         outdir = f"{a.outbase}/final_target_{s}"; os.makedirs(outdir, exist_ok=True)
         for c in CLASSES:
             fig, ax = plt.subplots(figsize=(7, 5.3))
-            for arr, lab, col in [(gen[c], "Pythia (gen)", "black"), (v1[c], "v1 (colleague)", "tab:blue"), (v2[c], "v2 (ours)", "tab:red")]:
+            curves = [(gen[c], "Pythia (gen)", "black"), (v1[c], "v1 (colleague)", "tab:blue"), (v2[c], "v2 (ours)", "tab:red")]
+            if v3 is not None: curves.append((v3[c], "v3 (no gen-filter, his cuts+frag)", "tab:green"))
+            for arr, lab, col in curves:
                 ax.hist(np.array(arr), bins=b, histtype="step", lw=1.9, color=col, label=lab)
             ax.set_xscale("log"); ax.set_yscale("log")
             ax.set_xlabel(rf"$\Sigma p_T$ per event {XLAB[c]} (GeV)", fontsize=14)

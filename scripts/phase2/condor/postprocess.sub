@@ -7,19 +7,21 @@ executable = wrapper.sh
 arguments  = $(Process) $Fnx(filelist)
 getenv     = TRUE
 
-# our postprocessing is self-contained -> ship it + the filelist with the job
-transfer_input_files = ../postprocessing_run3style.py, $(filelist)
+# our postprocessing is self-contained -> ship both variants + the filelist (wrapper picks by PP_MODE)
+transfer_input_files = ../postprocessing_run3style.py, ../postprocessing_ticl_ttbar_nopu.py, ../postprocessing_mohamed.py, $(filelist)
 should_transfer_files = YES
 when_to_transfer_output = ON_EXIT
 transfer_output_files = ""
 
-# knobs (single source of truth = submit.sh, which passes eos_path/calo so mkdir and write-path agree)
+# knobs (single source of truth = submit.sh, which passes eos_path/mode so mkdir and write-path agree)
+pp_mode       = run3style
+gen_filter    = on
 calo          = links
 files_per_job = 10
 mlpf_venv     = /afs/cern.ch/work/f/fmokhtar/private/mlpf_env
 eos_redir     = root://eosuser.cern.ch
 eos_path      = /eos/user/f/fmokhtar/mlpf/phase2/pkl_links
-environment = "FILES_PER_JOB=$(files_per_job) CALO=$(calo) MLPF_VENV=$(mlpf_venv) EOS_REDIR=$(eos_redir) EOS_PATH=$(eos_path)"
+environment = "FILES_PER_JOB=$(files_per_job) PP_MODE=$(pp_mode) GEN_FILTER=$(gen_filter) CALO=$(calo) MLPF_VENV=$(mlpf_venv) EOS_REDIR=$(eos_redir) EOS_PATH=$(eos_path)"
 
 output = logs/$(sample)_$(Process).out
 error  = logs/$(sample)_$(Process).err

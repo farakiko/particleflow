@@ -83,23 +83,28 @@ def compute(files):
     return m
 
 
-COL = {"ours": ("tab:red", "v2"), "moh": ("tab:blue", "v1")}   # v2=ours (links,one/particle,no cuts); v1=colleague
+COL = {"moh": ("tab:blue", "v1"), "ours": ("tab:red", "v2"), "v3": ("tab:green", "v3")}
+# v1 = colleague (gen-filter + cuts + fragment); v2 = ours (no filter/cuts, one-per-particle);
+# v3 = no gen-filter + his cuts + fragment (isolates the gen-filter effect: v1->v3)
+KEYS = ["moh", "ours", "v3"]
 
 
 def make_plots(M, sample, outdir):
     os.makedirs(outdir, exist_ok=True); sl = SL.get(sample, sample); plt.rcParams.update({"font.size": 12})
     # jet response
     fig, ax = plt.subplots(figsize=(7.6, 5.6)); b = np.logspace(-1, 1, 140)
-    for k in ("ours", "moh"):
+    for k in KEYS:
+        if k not in M: continue
         r = np.array(M[k]["resp"]); md = np.median(r); iq = (np.percentile(r, 75)-np.percentile(r, 25))/md
         ax.hist(r, bins=b, histtype="step", lw=2.4, color=COL[k][0], label=f"{COL[k][1]}  med {md:.2f}, IQR/med {iq:.2f}, std {np.std(r):.2f}")
     ax.axvline(1, color="k", ls="--", lw=1); ax.set_xscale("log"); ax.set_yscale("log")
     ax.set_xlabel(r"target-jet $p_T$ / gen-jet $p_T$"); ax.set_ylabel("jets"); ax.set_title(f"Jet response vs gen — {sl}"); ax.legend(fontsize=9)
     plt.tight_layout(); plt.savefig(f"{outdir}/jet_response.pdf"); plt.close()
     # sumpt per class
-    fig, ax = plt.subplots(figsize=(9, 5.2)); x = np.arange(len(CLASSES)); w = 0.38
-    for j, k in enumerate(("ours", "moh")):
-        ax.bar(x+(j-0.5)*w, [M[k]["sump"][c]/max(M[k]["gsump"][c], 1e-9) for c in CLASSES], w, color=COL[k][0], label=COL[k][1])
+    fig, ax = plt.subplots(figsize=(9.5, 5.2)); x = np.arange(len(CLASSES))
+    kk = [k for k in KEYS if k in M]; w = 0.8/len(kk)
+    for j, k in enumerate(kk):
+        ax.bar(x+(j-(len(kk)-1)/2)*w, [M[k]["sump"][c]/max(M[k]["gsump"][c], 1e-9) for c in CLASSES], w, color=COL[k][0], label=COL[k][1])
     ax.axhline(1, color="k", ls="--", lw=1); ax.set_xticks(x); ax.set_xticklabels([CLAB[c] for c in CLASSES], rotation=15)
     ax.set_ylabel(r"target $\Sigma p_T$ / gen"); ax.set_title(f"$\\Sigma p_T$ per class — {sl}"); ax.legend(fontsize=9)
     plt.tight_layout(); plt.savefig(f"{outdir}/sumpt_per_class.pdf"); plt.close()
@@ -108,7 +113,8 @@ def make_plots(M, sample, outdir):
         fig, axs = plt.subplots(2, 3, figsize=(15, 8.5)); axs = axs.ravel()
         for i, c in enumerate(CLASSES):
             ax = axs[i]
-            for k in ("ours", "moh"):
+            for k in KEYS:
+                if k not in M: continue
                 if hist:
                     r = np.array(M[k][key][c])
                     if len(r): ax.hist(r, bins=np.logspace(-1, 1, 70), histtype="step", lw=2, density=True, color=COL[k][0], label=f"{COL[k][1]} (med {np.median(r):.2f}, std {np.std(r):.2f})")
@@ -133,13 +139,16 @@ def main():
     ap.add_argument("--samples", nargs="+", default=["ttbar_0pu", "qcd_0pu", "zll_0pu"])
     ap.add_argument("--outbase", default="/Users/fmokhtar/projects/particleflow/plots/phase2")
     a = ap.parse_args()
+    subdir = {"moh": "pkl_mohamed/moh_*.pkl", "ours": "pkl_links/*.pkl", "v3": "pkl_v3/*.pkl"}
     for s in a.samples:
-        M = {"ours": compute(sorted(glob.glob(f"{NANO}/{s}/pkl_links/*.pkl"))),
-             "moh":  compute(sorted(glob.glob(f"{NANO}/{s}/pkl_mohamed/moh_*.pkl")))}
+        M = {}
+        for k, sub in subdir.items():
+            fs = sorted(glob.glob(f"{NANO}/{s}/{sub}"))
+            if fs: M[k] = compute(fs)
         outdir = f"{a.outbase}/final_target_{s}"
         make_plots(M, s, outdir)
         jr = {k: np.median(M[k]["resp"]) for k in M}
-        print(f"{s}: jetResp ours={jr['ours']:.3f} colleague={jr['moh']:.3f}  ->  {outdir}")
+        print(f"{s}: jetResp " + " ".join(f"{COL[k][1]}={jr[k]:.3f}" for k in KEYS if k in jr) + f"  ->  {outdir}")
 
 
 if __name__ == "__main__":

@@ -89,7 +89,7 @@ def build_gen_to_simcand(g, ev, iev):
         matched.update(int(k) for k in hit)
     return matched
 
-def process_event(E, iev):
+def process_event(E, iev, gen_filter=True):
     g = lambda b: ak.to_numpy(E[b][iev])
     ts_e = g(f"{TS}_raw_energy"); ts_reg = g(f"{TS}_regressed_energy")
     ts_pt = g(f"{TS}_raw_pt"); ts_em = g(f"{TS}_raw_em_energy")
@@ -118,12 +118,15 @@ def process_event(E, iev):
         s = r2s_sc[r2s_off[ti]:r2s_off[ti+1]]
         return float(np.min(s)) if len(s) else 1.0
 
-    matched = build_gen_to_simcand(g, E, iev)
+    matched = build_gen_to_simcand(g, E, iev) if gen_filter else None
 
     # ---- collect connections (element_idx in: ts [0,n_ts), track [n_ts, n_ts+n_trk)) ----
     conns = []
     for i in range(len(spid)):
-        if i not in matched: continue
+        if gen_filter:
+            if i not in matched: continue            # v1: keep only gen-matched simcands
+        else:
+            if not (1.5 <= abs(float(seta[i])) <= 3.0): continue   # v3: no gen-filter, explicit endcap cut
         apid = abs(int(spid[i]))
         cE = sraw[i] if apid == 11 else sen[i]     # electrons use raw_energy, else 'energy'
         # calo (trackster) connections via simToReco
@@ -258,11 +261,11 @@ def _charge(pid):
 def _ept(e, ts_pt, tpt, n_ts):
     return float(ts_pt[e]) if e < n_ts else float(tpt[e-n_ts])
 
-def process(infile, outfile, num_events=-1):
-    print(f"opening {infile}")
+def process(infile, outfile, num_events=-1, gen_filter=True):
+    print(f"opening {infile} (gen_filter={gen_filter})")
     E = uproot.open(infile)["Events"].arrays(BRANCHES)
     n = len(E) if num_events < 0 else min(num_events, len(E))
-    out = [process_event(E, i) for i in range(n)]
+    out = [process_event(E, i, gen_filter) for i in range(n)]
     with open(outfile, "wb") as f:
         pickle.dump(out, f, protocol=pickle.HIGHEST_PROTOCOL)
     npart = sum(int((d["ytarget"]["pid"] != 0).sum()) for d in out)
@@ -272,8 +275,11 @@ def process(infile, outfile, num_events=-1):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--input", required=True); ap.add_argument("--output", required=True)
-    ap.add_argument("--num-events", type=int, default=-1); a = ap.parse_args()
-    process(a.input, a.output, a.num_events)
+    ap.add_argument("--num-events", type=int, default=-1)
+    ap.add_argument("--gen-filter", choices=["on", "off"], default="on",
+                    help="on = v1 (colleague, gen-match filter); off = v3 (no gen-filter, endcap cut, keep cuts+fragment)")
+    a = ap.parse_args()
+    process(a.input, a.output, a.num_events, a.gen_filter == "on")
 
 if __name__ == "__main__":
     main()

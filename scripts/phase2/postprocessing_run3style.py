@@ -14,7 +14,8 @@ The ONE design axis left open (to settle by full-scale training) is the calo col
   --calo links  : ticlTracksterLinks        (post-linking, CMSSW-merged tracksters)
 Everything else is identical between the two -> a clean apples-to-apples comparison.
 
-Elements: all GeneralTrack (typ=1) + all <calo> tracksters (typ=4).
+Elements: all GeneralTrack (typ=1) + all GSFTrack (typ=2) + all <calo> tracksters (typ=4).
+Electrons prefer their GSF track (as the colleague's script does); other charged -> GeneralTrack.
 Gen jets: HGCalGenPart (status==1), excluding neutrinos, anti-kt R=0.4, pt>3.
 """
 import math, pickle, argparse
@@ -36,7 +37,7 @@ elem_branches = ["typ", "pt", "eta", "phi", "energy", "charge", "px", "py", "pz"
                  # trackster shape/timing (zero on tracks): depth, timing, PCA eigenvalues
                  "bary_z", "time", "timeerror", "ev1", "ev2", "ev3",
                  # track quality / muon-ID / vertex (zero on tracksters)
-                 "muon_type", "muon_dt_hits", "muon_csc_hits",
+                 "muon_type", "muon_dt_hits", "muon_csc_hits", "gsf_type",
                  "pterror", "etaerror", "phierror", "lambdaerror", "qoverperror",
                  "vx", "vy", "vz",
                  # track-density around trackster (zero on tracks): colleague's proximity features
@@ -61,6 +62,13 @@ def branches_for(ts):
         "GeneralTrack_ptErr", "GeneralTrack_etaErr", "GeneralTrack_phiErr",
         "GeneralTrack_lambdaErr", "GeneralTrack_qoverpErr",
         "GeneralTrack_vx", "GeneralTrack_vy", "GeneralTrack_vz",
+        "GSFTrack_ptMode", "GSFTrack_pMode", "GSFTrack_etaMode", "GSFTrack_phiMode",
+        "GSFTrack_pxMode", "GSFTrack_pyMode", "GSFTrack_pzMode",
+        "GSFTrack_charge", "GSFTrack_nhits",
+        "GSFTrack_ptModeError", "GSFTrack_etaModeError", "GSFTrack_phiModeError",
+        "GSFTrack_lambdaModeError", "GSFTrack_qoverpModeError",
+        "GSFTrack_vx", "GSFTrack_vy", "GSFTrack_vz",
+        "SimTICLCandidates_nGsfTrackIdxs", "SimTICLCandidatesGsfTrackIdxs_trackIndex",
         f"{ts}_raw_pt", f"{ts}_barycenter_eta", f"{ts}_barycenter_phi", f"{ts}_barycenter_z",
         f"{ts}_raw_energy", f"{ts}_raw_em_energy", f"{ts}_n{ts}vertices",
         f"{ts}_time", f"{ts}_timeError", f"{ts}_EV1", f"{ts}_EV2", f"{ts}_EV3",
@@ -105,7 +113,15 @@ def process_event(E, iev, ts):
     sbz  = g(f"{ts}_barycenter_z"); stime = g(f"{ts}_time"); sterr = g(f"{ts}_timeError")
     sev1, sev2, sev3 = g(f"{ts}_EV1"), g(f"{ts}_EV2"), g(f"{ts}_EV3")
     n_ts = len(spt)
-    n_el = n_trk + n_ts
+    # ---- GSF tracks (typ 2): electron-momentum elements, appended after tracksters ----
+    gpt_m = g("GSFTrack_ptMode"); gpm = g("GSFTrack_pMode")
+    geta_m = g("GSFTrack_etaMode"); gphi_m = g("GSFTrack_phiMode")
+    gpx = g("GSFTrack_pxMode"); gpy = g("GSFTrack_pyMode"); gpz = g("GSFTrack_pzMode")
+    gchg = g("GSFTrack_charge"); gnh = g("GSFTrack_nhits")
+    gpte = g("GSFTrack_ptModeError"); getae = g("GSFTrack_etaModeError"); gphie = g("GSFTrack_phiModeError")
+    glame = g("GSFTrack_lambdaModeError"); gqpe = g("GSFTrack_qoverpModeError")
+    gvx = g("GSFTrack_vx"); gvy = g("GSFTrack_vy"); gvz = g("GSFTrack_vz")
+    n_gsf = len(gpt_m); gbase = n_trk + n_ts; n_el = n_trk + n_ts + n_gsf
 
     Xelem = np.recarray((n_el,), dtype=[(n, np.float32) for n in elem_branches]); Xelem.fill(0.0)
     # tracks
@@ -120,17 +136,17 @@ def process_event(E, iev, ts):
     Xelem["vx"][:n_trk] = tvx; Xelem["vy"][:n_trk] = tvy; Xelem["vz"][:n_trk] = tvz
     # tracksters
     th = 2.0*np.arctan(np.exp(-seta))
-    Xelem["typ"][n_trk:] = 4
-    Xelem["pt"][n_trk:] = spt; Xelem["eta"][n_trk:] = seta; Xelem["phi"][n_trk:] = sphi
-    Xelem["energy"][n_trk:] = sreg; Xelem["em_energy"][n_trk:] = sem; Xelem["nhits"][n_trk:] = snh
-    Xelem["px"][n_trk:] = spt*np.cos(sphi); Xelem["py"][n_trk:] = spt*np.sin(sphi)
-    Xelem["pz"][n_trk:] = sreg*np.cos(th)
+    Xelem["typ"][n_trk:gbase] = 4
+    Xelem["pt"][n_trk:gbase] = spt; Xelem["eta"][n_trk:gbase] = seta; Xelem["phi"][n_trk:gbase] = sphi
+    Xelem["energy"][n_trk:gbase] = sreg; Xelem["em_energy"][n_trk:gbase] = sem; Xelem["nhits"][n_trk:gbase] = snh
+    Xelem["px"][n_trk:gbase] = spt*np.cos(sphi); Xelem["py"][n_trk:gbase] = spt*np.sin(sphi)
+    Xelem["pz"][n_trk:gbase] = sreg*np.cos(th)
     # bary_z -> |z| (depth; endcap sign is in eta); time==-99 sentinel -> 0 (with its error)
     tvalid = stime > -50
-    Xelem["bary_z"][n_trk:] = np.abs(sbz)
-    Xelem["time"][n_trk:] = np.where(tvalid, stime, 0.0)
-    Xelem["timeerror"][n_trk:] = np.where(tvalid, sterr, 0.0)
-    Xelem["ev1"][n_trk:] = sev1; Xelem["ev2"][n_trk:] = sev2; Xelem["ev3"][n_trk:] = sev3
+    Xelem["bary_z"][n_trk:gbase] = np.abs(sbz)
+    Xelem["time"][n_trk:gbase] = np.where(tvalid, stime, 0.0)
+    Xelem["timeerror"][n_trk:gbase] = np.where(tvalid, sterr, 0.0)
+    Xelem["ev1"][n_trk:gbase] = sev1; Xelem["ev2"][n_trk:gbase] = sev2; Xelem["ev3"][n_trk:gbase] = sev3
     # track-density around each trackster (tracks with pt>=1, at the HGCAL surface)
     if n_ts:
         good = tpt >= 1.0
@@ -139,15 +155,24 @@ def process_event(E, iev, ts):
             dphi = np.arctan2(np.sin(gkp[None, :] - sphi[:, None]), np.cos(gkp[None, :] - sphi[:, None]))
             dR = np.hypot(gke[None, :] - seta[:, None], dphi)            # (n_ts, n_good)
             jmin = dR.argmin(1)
-            Xelem["min_dR_track"][n_trk:] = dR[np.arange(n_ts), jmin]
-            Xelem["near_track_pt"][n_trk:] = gkpt[jmin]
-            Xelem["sum_pt_dR10"][n_trk:] = (gkpt[None, :] * (dR < 0.10)).sum(1)
+            Xelem["min_dR_track"][n_trk:gbase] = dR[np.arange(n_ts), jmin]
+            Xelem["near_track_pt"][n_trk:gbase] = gkpt[jmin]
+            Xelem["sum_pt_dR10"][n_trk:gbase] = (gkpt[None, :] * (dR < 0.10)).sum(1)
             for col, c in [("n_trk_dR01", 0.01), ("n_trk_dR02", 0.02), ("n_trk_dR03", 0.03),
                            ("n_trk_dR04", 0.04), ("n_trk_dR05", 0.05)]:
-                Xelem[col][n_trk:] = (dR < c).sum(1)
+                Xelem[col][n_trk:gbase] = (dR < c).sum(1)
         else:
-            Xelem["min_dR_track"][n_trk:] = 99.0
+            Xelem["min_dR_track"][n_trk:gbase] = 99.0
     # else: no tracksters; min_dR_track stays 0 (no trackster rows)
+
+    # GSF tracks (typ 2, gsf_type=1): kinematics from *Mode; muon-ID / shape / density stay 0
+    Xelem["typ"][gbase:] = 2; Xelem["gsf_type"][gbase:] = 1.0
+    Xelem["pt"][gbase:] = gpt_m; Xelem["eta"][gbase:] = geta_m; Xelem["phi"][gbase:] = gphi_m
+    Xelem["energy"][gbase:] = gpm; Xelem["charge"][gbase:] = gchg; Xelem["nhits"][gbase:] = gnh
+    Xelem["px"][gbase:] = gpx; Xelem["py"][gbase:] = gpy; Xelem["pz"][gbase:] = gpz
+    Xelem["pterror"][gbase:] = gpte; Xelem["etaerror"][gbase:] = getae; Xelem["phierror"][gbase:] = gphie
+    Xelem["lambdaerror"][gbase:] = glame; Xelem["qoverperror"][gbase:] = gqpe
+    Xelem["vx"][gbase:] = gvx; Xelem["vy"][gbase:] = gvy; Xelem["vz"][gbase:] = gvz
 
     # ---- truth particles (SimTICLCandidates) ----
     pid = g("SimTICLCandidates_pdgID"); chg = g("SimTICLCandidates_charge")
@@ -163,6 +188,17 @@ def process_event(E, iev, ts):
 
     cnt = g(f"{s2r}_n{s2r}Links"); off = np.concatenate([[0], np.cumsum(cnt)]).astype(int)
     aidx = g(f"{s2r}Links_index"); ashe = g(f"{s2r}Links_sharedEnergy")
+    # electron -> GSF-track association (ragged), the same branch his script uses
+    gcnt = g("SimTICLCandidates_nGsfTrackIdxs"); goff = np.concatenate([[0], np.cumsum(gcnt)]).astype(int)
+    gflat = g("SimTICLCandidatesGsfTrackIdxs_trackIndex")
+
+    def best_trackster(i):  # argmax-sharedEnergy trackster element for particle i, or None
+        ii = aidx[off[i]:off[i+1]]; ss = ashe[off[i]:off[i+1]]
+        if len(ss) and ss.max() > 0:
+            b = int(ii[int(np.argmax(ss))])
+            if 0 <= b < n_ts:
+                return n_trk + b
+        return None
 
     elem_to_parts = defaultdict(list)
     for i in range(len(pid)):
@@ -170,17 +206,29 @@ def process_event(E, iev, ts):
         # (drops barrel charged tracks + the forward |eta|>3 tail; keeps target == gen acceptance)
         if not (ENDCAP_LO <= abs(float(ceta[i])) <= ENDCAP_HI):
             continue
-        charged = (abs(int(pid[i])) in CHARGED_PIDS) and (int(ctrk[i]) != SENTINEL)
+        apid = abs(int(pid[i]))
+        if apid == 11:
+            # electron: prefer its GSF track (as his script does), then general track, then trackster
+            gids = gflat[goff[i]:goff[i+1]]
+            gid = next((int(x) for x in gids if 0 <= int(x) < n_gsf), None)
+            if gid is not None:
+                elem_to_parts[gbase + gid].append(i); continue
+            ti = int(ctrk[i])
+            if ti != SENTINEL and 0 <= ti < n_trk:
+                elem_to_parts[ti].append(i); continue
+            e = best_trackster(i)
+            if e is not None:
+                elem_to_parts[e].append(i)
+            continue
+        charged = (apid in CHARGED_PIDS) and (int(ctrk[i]) != SENTINEL)
         if charged:
             ti = int(ctrk[i])
             if 0 <= ti < n_trk:
                 elem_to_parts[ti].append(i)
         else:
-            ii = aidx[off[i]:off[i+1]]; ss = ashe[off[i]:off[i+1]]
-            if len(ss) and ss.max() > 0:
-                best = int(ii[int(np.argmax(ss))])
-                if 0 <= best < n_ts:
-                    elem_to_parts[n_trk + best].append(i)
+            e = best_trackster(i)
+            if e is not None:
+                elem_to_parts[e].append(i)
 
     ytarget = np.recarray((n_el,), dtype=[(n, np.float32) for n in particle_feature_order])
     ytarget.fill(0.0); ytarget["jet_idx"] = -1

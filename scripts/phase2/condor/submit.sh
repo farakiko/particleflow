@@ -6,6 +6,8 @@ set -e
 NANO=${NANO:-/eos/cms/store/group/dpg_hgcal/comm_hgcal/moanwar/mlpf/nano}
 SAMPLES=${SAMPLES:-"qcd_0pu ttbar_0pu zll_0pu"}
 FILES_PER_JOB=${FILES_PER_JOB:-10}
+PP_MODE=${PP_MODE:-run3style}      # run3style = ours (v2) | mohamed = colleague (v1/v3)
+GEN_FILTER=${GEN_FILTER:-on}       # mohamed only: on = v1 | off = v3
 CALO=${CALO:-links}
 EOS_REDIR=${EOS_REDIR:-root://eosuser.cern.ch}
 EOS_PATH=${EOS_PATH:-/eos/user/f/fmokhtar/mlpf/phase2/pkl_links}
@@ -15,11 +17,12 @@ for s in ${SAMPLES}; do
   find "${NANO}/${s}" -name '*.root' | sort > "filelists/${s}.txt"
   n=$(wc -l < "filelists/${s}.txt")
   njobs=$(( (n + FILES_PER_JOB - 1) / FILES_PER_JOB ))
-  echo "${s}: ${n} files -> ${njobs} jobs (calo=${CALO}, FILES_PER_JOB=${FILES_PER_JOB})"
+  echo "${s}: ${n} files -> ${njobs} jobs (mode=${PP_MODE} gen_filter=${GEN_FILTER} calo=${CALO}, FILES_PER_JOB=${FILES_PER_JOB}) -> ${EOS_PATH}/${s}"
   xrdfs "${EOS_REDIR}" mkdir -p "${EOS_PATH}/${s}" || true
-  # pass eos_path/calo/files_per_job so the wrapper writes exactly where we just mkdir'd
+  # pass eos_path/mode/calo/files_per_job so the wrapper writes exactly where we just mkdir'd
   condor_submit sample="${s}" filelist="filelists/${s}.txt" njobs="${njobs}" \
-    calo="${CALO}" eos_path="${EOS_PATH}" eos_redir="${EOS_REDIR}" files_per_job="${FILES_PER_JOB}" \
+    pp_mode="${PP_MODE}" gen_filter="${GEN_FILTER}" calo="${CALO}" \
+    eos_path="${EOS_PATH}" eos_redir="${EOS_REDIR}" files_per_job="${FILES_PER_JOB}" \
     postprocess.sub
 done
 echo "submitted. monitor: condor_q ; tail logs/*.out ; count: xrdfs ${EOS_REDIR} ls ${EOS_PATH}/<sample> | wc -l"

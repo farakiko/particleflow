@@ -13,7 +13,7 @@ from mlpf.conf import Dataset, X_FEATURES as _XF, Y_FEATURES, CLASS_LABELS
 DS = Dataset.CMS_PHASE2.value
 X_FEATURES = _XF[DS]
 CLS = CLASS_LABELS[DS]                 # [0, 211, 130, 22, 11, 13]
-TYP_MAP = {1: 1, 4: 2}                 # element typ -> typ_idx (track=1, trackster=2)
+TYP_MAP = {1: 1, 2: 3, 4: 2}           # element typ -> typ_idx (track=1, trackster=2, gsf=3)
 NUM_SPLITS = 10
 
 
@@ -52,6 +52,7 @@ def prepare_data_phase2(fn):
             "bary_z": Xe["bary_z"], "time": Xe["time"], "timeerror": Xe["timeerror"],
             "ev1": Xe["ev1"], "ev2": Xe["ev2"], "ev3": Xe["ev3"],
             "muon_type": Xe["muon_type"], "muon_dt_hits": Xe["muon_dt_hits"], "muon_csc_hits": Xe["muon_csc_hits"],
+            "gsf_type": Xe["gsf_type"] if "gsf_type" in Xe.dtype.names else np.zeros(n, np.float32),
             "pterror": Xe["pterror"], "etaerror": Xe["etaerror"], "phierror": Xe["phierror"],
             "lambdaerror": Xe["lambdaerror"], "qoverperror": Xe["qoverperror"],
             "vx": Xe["vx"], "vy": Xe["vy"], "vz": Xe["vz"],

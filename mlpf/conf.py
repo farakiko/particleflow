@@ -414,7 +414,7 @@ X_FEATURES = {
         # trackster shape/timing (zero on track elements) — depth is the γ/nhad discriminator
         "bary_z", "time", "timeerror", "ev1", "ev2", "ev3",
         # track quality / muon-ID / vertex (zero on trackster elements) — μ/e vs charged-hadron ID
-        "muon_type", "muon_dt_hits", "muon_csc_hits",
+        "muon_type", "muon_dt_hits", "muon_csc_hits", "gsf_type",
         "pterror", "etaerror", "phierror", "lambdaerror", "qoverperror",
         "vx", "vy", "vz",
         # track-density around the trackster (zero on track elements) — charged/neutral proximity

@@ -9,6 +9,7 @@ MLPF_VENV=${MLPF_VENV:-/afs/cern.ch/work/f/fmokhtar/private/mlpf_env}
 source "${LCG_SETUP}"
 python -m venv --system-site-packages "${MLPF_VENV}"
 source "${MLPF_VENV}/bin/activate"
-pip install --no-cache-dir fastjet
-python -c "import uproot,awkward,numpy,vector,fastjet; print('venv OK:', '${MLPF_VENV}')"
+# fastjet is missing from LCG_106; networkx/tqdm are needed by the colleague's script (PP_MODE=ticl)
+pip install --no-cache-dir fastjet networkx tqdm
+python -c "import uproot,awkward,numpy,vector,fastjet,networkx,tqdm; print('venv OK:', '${MLPF_VENV}')"
 echo "done. point wrapper.sh / postprocess.sub at MLPF_VENV=${MLPF_VENV}"

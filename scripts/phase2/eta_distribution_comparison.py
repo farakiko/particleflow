@@ -38,7 +38,9 @@ def per_eta(files, source):
     return out
 
 
-COL = {"gen": ("black", "gen (Pythia)"), "v1": ("tab:blue", "v1 (colleague)"), "v2": ("tab:red", "v2 (ours)")}
+COL = {"gen": ("black", "gen (Pythia)"), "v1": ("tab:blue", "v1 (colleague)"),
+       "v2": ("tab:red", "v2 (ours)"), "v3": ("tab:green", "v3 (no gen-filter, his cuts+frag)")}
+KEYS = ["gen", "v1", "v2", "v3"]
 
 
 def main():
@@ -49,11 +51,14 @@ def main():
     b = np.linspace(-4.0, 4.0, 100)
     for s in a.samples:
         fl = sorted(glob.glob(f"{NANO}/{s}/pkl_links/*.pkl")); fm = sorted(glob.glob(f"{NANO}/{s}/pkl_mohamed/moh_*.pkl"))
+        fv3 = sorted(glob.glob(f"{NANO}/{s}/pkl_v3/*.pkl"))
         M = {"gen": per_eta(fl, "gen"), "v2": per_eta(fl, "target"), "v1": per_eta(fm, "target")}
+        if fv3: M["v3"] = per_eta(fv3, "target")
         outdir = f"{a.outbase}/final_target_{s}"; os.makedirs(outdir, exist_ok=True)
         for c in CLASSES:
             fig, ax = plt.subplots(figsize=(7.4, 5.2))
-            for k in ("gen", "v1", "v2"):
+            for k in KEYS:
+                if k not in M: continue
                 ax.hist(np.array(M[k][c]), bins=b, histtype="step", lw=1.9, color=COL[k][0], label=COL[k][1])
             for lo, hi in [(-3.0, -1.5), (1.5, 3.0)]:
                 ax.axvspan(lo, hi, color="0.9", zorder=0)
