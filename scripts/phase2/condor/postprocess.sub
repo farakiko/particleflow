@@ -1,7 +1,6 @@
-# HTCondor submit for Run3-style postprocessing (one submission per sample).
-# submit.sh fills sample/filelist/njobs/eos_path/calo and creates the eos output subdir.
-# Defaults below; override via `condor_submit key=value ... postprocess.sub` or submit.sh.
-#   CALO=links is the settled collection (docs/phase2_target_comparison.md); use calo=clue3d for the other variant.
+# HTCondor submit for Phase-2 postprocessing (one submission per sample).
+# ALWAYS drive this via submit.sh: it passes pp_mode/gen_filter/calo/files_per_job/eos_redir/eos_path
+# on the condor_submit command line, and creates the matching eos output subdir.
 universe = vanilla
 executable = wrapper.sh
 arguments  = $(Process) $Fnx(filelist)
@@ -13,14 +12,12 @@ should_transfer_files = YES
 when_to_transfer_output = ON_EXIT
 transfer_output_files = ""
 
-# knobs (single source of truth = submit.sh, which passes eos_path/mode so mkdir and write-path agree)
-pp_mode       = run3style
-gen_filter    = on
-calo          = links
-files_per_job = 10
-mlpf_venv     = /afs/cern.ch/work/f/fmokhtar/private/mlpf_env
-eos_redir     = root://eosuser.cern.ch
-eos_path      = /eos/user/f/fmokhtar/mlpf/phase2/pkl_links
+# knobs come from submit.sh via the condor_submit command line. Do NOT add standalone `name = ...`
+# lines for pp_mode/gen_filter/calo/files_per_job/eos_redir/eos_path here: condor prepends command-line
+# args, so an in-file assignment on a LATER line silently OVERRIDES (clobbers) the submit.sh value —
+# that is exactly the bug that wrote output to the default pkl_links instead of the requested EOS_PATH.
+# mlpf_venv is the one knob submit.sh does not pass, so it defines its default here.
+mlpf_venv   = /afs/cern.ch/work/f/fmokhtar/private/mlpf_env
 environment = "FILES_PER_JOB=$(files_per_job) PP_MODE=$(pp_mode) GEN_FILTER=$(gen_filter) CALO=$(calo) MLPF_VENV=$(mlpf_venv) EOS_REDIR=$(eos_redir) EOS_PATH=$(eos_path)"
 
 output = logs/$(sample)_$(Process).out
