@@ -372,6 +372,13 @@ interactive pod), qcd/zll tfds pending storage math, v1-target builders once con
 - `/shared`: 225G free at start; `/scratch` = node-local NVMe (~640G free), used for caches
   only (ephemeral). `/shared/mlpf` is a pre-existing unrelated project → phase2 workspace
   moved to **`/shared/mlpf-phase2/`**.
+- **✅ SMOKE TRAINING PASSED (2026-09-15 11:01)**: full ttbar tfds built clean (10/10 configs,
+  **70 GB** final, 4.6M events) → `mlpf` pipeline, 1× MIG 1g.12gb, 300 steps in ~2 min:
+  **valid loss 6.36 → 3.43 → 3.09** (halved, still descending), plots + checkpoints at
+  100/200/300, test stage + jet plots OK, dataloader negligible vs 0.13 s forward.
+  Experiment: `/shared/mlpf-phase2/experiments/pyg-cms-phase2-v1_cms_phase2_ngt_20260915_105932_*`.
+  One fix en route: `plot_utils.py` lookup tables lacked `cms_phase2` (KeyError in the
+  validation-cycle plots; registered class labels/jet bins/experiment label/sample names).
 - **tfds sizing (measured on 900 real events)**: serialized proto 56 KB/ev; tfds's stock
   ArrayRecord writer compresses to **18.9 KB/ev → full ttbar (4.6M ev) ≈ 87 GB** — fits /shared.
   Dropping the all-zero `ycand` or tuning writer options gains ~nothing post-compression →
