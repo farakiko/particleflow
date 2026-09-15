@@ -112,7 +112,16 @@ Pass criteria: loss decreases over 300 steps; checkpoint written under
 Real runs afterwards: drop the caps (defaults: `num_steps=100000`, full nvalid) and move
 to a Job manifest instead of the interactive pod.
 
-## 6. Monitor / cleanup
+## 6. EOS mirror of results (browse via CERNBox)
+
+`scripts/phase2/cluster/eos_sync.sh` mirrors the light evaluation artifacts of every
+experiment (plots_step_*, history, tensorboard `runs/`, logs, configs — ~2 MB/run) to
+**`/eos/user/f/fmokhtar/mlpf/phase2/experiments/`**; `checkpoints/` and `preds_step_*/`
+stay on /shared. A background loop runs on the training pod:
+`nohup bash scripts/phase2/cluster/eos_sync.sh --loop 300 > /shared/mlpf-phase2/logs/eos_sync.log 2>&1 &`
+(re-arm after pod restarts; it skips gracefully if EOS quota is full again).
+
+## 7. Monitor / cleanup
 
 ```bash
 kubectl exec pf-train-smoke -- nvidia-smi
