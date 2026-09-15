@@ -806,13 +806,17 @@ models:
         head_dim: 16
         num_heads: 16
 
-    # ttbar first; add cms_pf_phase2_qcd_nopu / cms_pf_phase2_zll_nopu here
-    # once their tfds are built on /shared (storage budget permitting).
     train_datasets:
       physical:
         batch_size: 16
         samples:
           - name: "cms_pf_phase2_ttbar_nopu"
+            version: "1.0.0"
+            splits: ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"]
+          - name: "cms_pf_phase2_qcd_nopu"
+            version: "1.0.0"
+            splits: ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"]
+          - name: "cms_pf_phase2_zll_nopu"
             version: "1.0.0"
             splits: ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"]
 
@@ -823,8 +827,20 @@ models:
           - name: "cms_pf_phase2_ttbar_nopu"
             version: "1.0.0"
             splits: ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"]
+          - name: "cms_pf_phase2_qcd_nopu"
+            version: "1.0.0"
+            splits: ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"]
+          - name: "cms_pf_phase2_zll_nopu"
+            version: "1.0.0"
+            splits: ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"]
 
     test_datasets:
       - name: "cms_pf_phase2_ttbar_nopu"
+        version: "1.0.0"
+        splits: ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"]
+      - name: "cms_pf_phase2_qcd_nopu"
+        version: "1.0.0"
+        splits: ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"]
+      - name: "cms_pf_phase2_zll_nopu"
         version: "1.0.0"
         splits: ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"]

@@ -1,0 +1,48 @@
+# Full-length MLPF Phase-2 training as a k8s Job (not the interactive smoke pod).
+#   kubectl apply -f kube/train-job.yml
+#   kubectl logs -f job/pf-train-phase2-v1        # or: tail /shared/mlpf-phase2/logs/train_job.log
+#   kubectl delete job pf-train-phase2-v1         # plain delete ONLY — never force
+# Design mirrors kube/train-pod.yml: explicit shared PVC mount, NO vscode-in-shared label,
+# 1x MIG slice on H100-NVL, env + code from /shared (git pull first!).
+# backoffLimit 0: no auto-retry — resume deliberately with --load <checkpoint> instead.
+# ⚠ /scratch (auto-injected emptyDir) is capped at 60G — nothing may stage there.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: pf-train-phase2-v1
+spec:
+  backoffLimit: 0
+  template:
+    metadata:
+      labels:
+        home: "eos"
+        mount-eos: "true"
+    spec:
+      restartPolicy: Never
+      volumes:
+      - name: shared
+        persistentVolumeClaim:
+          claimName: shared
+      containers:
+      - name: train
+        image: registry.cern.ch/ngt/pytorch:2.3.1
+        command: ["/bin/bash", "-c"]
+        args:
+        - |
+          bash /shared/particleflow/scripts/phase2/cluster/train_job.sh \
+            --num_steps 100000 --nvalid 100000 \
+            2>&1 | tee -a /shared/mlpf-phase2/logs/train_job.log
+        env:
+        - {name: PHASE2_PKL_SUBDIR, value: "."}
+        - {name: PYTHONUNBUFFERED, value: "1"}
+        volumeMounts:
+        - name: shared
+          mountPath: /shared
+        resources:
+          requests: {cpu: "6", memory: "16Gi"}
+          limits:
+            cpu: "16"
+            memory: "48Gi"
+            nvidia.com/mig-1g.12gb: 1
+      nodeSelector:
+        nvidia.com/gpu.product: NVIDIA-H100-NVL

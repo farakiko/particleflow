@@ -73,25 +73,24 @@ Hard-won details baked into the script:
 Fallback if a node's driver were too old for cu128 wheels (not the case here): venv with
 `--system-site-packages` over the image torch 2.3.1 — version-skewed, smoke-test only.
 
-## 4. Build the ttbar tfds (10 configs in parallel)
+## 4. Build a sample's tfds (guarded waves of parallel configs)
 
-Scripted: `nohup bash scripts/phase2/cluster/tfds_build_ttbar.sh > /shared/mlpf-phase2/logs/tfds_build_ttbar.log 2>&1 &`
-— per-config logs in `/shared/mlpf-phase2/logs/tfds_ttbar_<i>.log`.
-
-Each builder splits the file list into 10 configs (`BUILDER_CONFIGS`), 90/10
-train/test *by file* inside each config. `PHASE2_PKL_SUBDIR=.` adapts the sample dirs
-to the eos layout. **Measured (900 real events)**: final ArrayRecord ≈ **19 KB/ev**
-(tfds's stock writer compresses; `ycand`-dropping/writer-option tuning gain ~nothing)
-→ full ttbar ≈ **87 GB**. The build's shuffle stage transiently holds ~3× that as
-uncompressed temp buckets, so the script builds on **/scratch NVMe** in two waves of 5
-configs and rsyncs only the final dataset to `/shared` (upstream's job_scratch pattern).
+`scripts/phase2/cluster/tfds_build.sh SAMPLE WAVE_WIDTH [GUARD_GB] [CONFIG...]` — e.g.
 
 ```bash
-du -sh /shared/mlpf-phase2/tfds/cms_pf_phase2_ttbar_nopu       # calibrates pkl→tfds ratio before qcd/zll
+nohup bash scripts/phase2/cluster/tfds_build.sh zll_nopu 10       > /shared/mlpf-phase2/logs/tfds_build_zll.log 2>&1 &
+nohup bash scripts/phase2/cluster/tfds_build.sh qcd_nopu 3 150    > /shared/mlpf-phase2/logs/tfds_build_qcd.log 2>&1 &
 ```
 
-After config 1 finishes you can already smoke-train by temporarily setting
-`splits: ["1"]` in the spec — or just wait for all 10.
+Per-config logs: `logs/tfds_<sample>_<i>.log`. Each builder splits the file list into
+10 configs, 90/10 train/test *by file*. `PHASE2_PKL_SUBDIR=.` adapts to the eos layout.
+
+Sizing model (measured): final ArrayRecord ≈ **19 KB/ev** (ttbar; scales with
+elements/event) → ttbar came out at **70 GB**. The shuffle stage transiently holds ~3×
+a config's final size as uncompressed temp buckets, so the script builds **directly on
+/shared** in width-limited waves with a free-space guard before each wave (⚠ never
+stage on /scratch — it's a 60G-capped emptyDir; exceeding it EVICTS the pod).
+To resume after an abort/failure, rerun with the missing config numbers as arguments.
 
 ## 5. Smoke training (1 GPU, ~minutes)
 
@@ -132,10 +131,9 @@ kubectl delete pod pf-train-smoke                   # plain delete ONLY — neve
 
 ## Known issues / open items
 
-- **EOS user area over quota (2026-09-14)**: even 0-byte writes to `/eos/user/f/fmokhtar`
-  fail. Reads are fine (pkls load), but v1 condor jobs writing `pkl_links_v1` will fail
-  until space is freed — then resubmit (done files are skipped). All cluster scripts set
-  `HOME=/shared/mlpf-phase2/home` to stay clear of it.
+- **EOS quota**: was exhausted 2026-09-14 (broke v1 condor writes); freed 2026-09-15 by
+  removing `pkl_links_v1` (v1 to be re-produced when storage is found). Scripts keep
+  `HOME=/shared/mlpf-phase2/home` regardless; `eos_sync.sh` skips gracefully if it refills.
 - **v2 pkl counts** (2026-09-14, all written 12:45–13:27 same day, schema-uniform 37-field):
   ttbar 15,399/18,488 inputs, qcd 25,136, zll 18,206 — ttbar mop-up via condor resubmit
   when quota allows; a later tfds rebuild of the tail = version bump (1.0.1).

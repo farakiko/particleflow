@@ -62,4 +62,5 @@ data/cms/phase2/
 # personal pod specs stay untracked, but the phase2 training pod + runbook are canonical
 kube/*
 !kube/train-pod.yml
+!kube/train-job.yml
 !kube/README-train.md
