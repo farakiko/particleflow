@@ -81,10 +81,11 @@ def main():
     }
 
     # ---- 1. jet response overlay (his matching, ref = CMSSW genjets)
+    matches = {k: M.match_jet_collections(jets, "cmssw", k, dR_max=0.1) for k in ["v1", "v2"]}
     fig, ax = plt.subplots(figsize=(10, 7))
     b = np.linspace(0, 2, 101)
     for k in ["v1", "v2"]:
-        rp, tp = M.match_jet_collections(jets, "cmssw", k, dR_max=0.1)
+        rp, tp = matches[k]
         r = tp / rp
         ax.hist(r, bins=b, histtype="step", lw=2, color=C[k], density=True,
                 label=f"{k} target  (n={len(r)}, mean={r.mean():.3f}, med={np.median(r):.3f}, std={r.std():.3f})")
@@ -94,6 +95,29 @@ def main():
     ax.legend(fontsize=13)
     M.cms_label(ax)
     _sv(fig, outdir, "overlay_jet_response.png")
+
+    # ---- 1b. response vs genjet pT: median + IQR band
+    fig, ax = plt.subplots(figsize=(10, 7))
+    ptbins = np.array([3, 5, 10, 20, 40, 60, 80, 100, 150, 200, 400], float)
+    centers = np.sqrt(ptbins[:-1] * ptbins[1:])
+    for k in ["v1", "v2"]:
+        rp, tp = matches[k]
+        r = tp / rp
+        med, lo, hi = [], [], []
+        for a_, b_ in zip(ptbins[:-1], ptbins[1:]):
+            m = (rp >= a_) & (rp < b_)
+            q = np.percentile(r[m], [25, 50, 75]) if m.sum() >= 10 else [np.nan] * 3
+            lo.append(q[0]); med.append(q[1]); hi.append(q[2])
+        ax.plot(centers, med, "o-", color=C[k], lw=2, label=f"{k} median")
+        ax.fill_between(centers, lo, hi, color=C[k], alpha=0.18, label=f"{k} IQR")
+    ax.axhline(1.0, color="gray", ls=":", lw=1)
+    ax.set_xscale("log")
+    ax.set_ylim(0, 1.6)
+    ax.set_xlabel("CMSSW genjet $p_T$ (GeV)")
+    ax.set_ylabel("target jet $p_T$ / genjet $p_T$")
+    ax.legend(fontsize=12, ncol=2)
+    M.cms_label(ax)
+    _sv(fig, outdir, "overlay_jet_response_vs_pt.png")
 
     # ---- 2. jet pt + eta spectra overlay
     for var, bins, xl in [("pt", np.logspace(np.log10(3), 3, 60), "jet $p_T$ (GeV)"),
