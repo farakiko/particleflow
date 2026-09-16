@@ -80,8 +80,13 @@ def main():
                                     awk2["pythia"]["phi"], awk2["pythia"]["energy"]),
     }
 
+    # endcap-only reference (moanwar's convention: his stored genjets are 1.5<|eta|<3.2)
+    ec = (abs(jets["cmssw"].eta) > 1.5) & (abs(jets["cmssw"].eta) < 3.2)
+    jets["cmssw_ec"] = jets["cmssw"][ec]
+
     # ---- 1. jet response overlay (his matching, ref = CMSSW genjets)
     matches = {k: M.match_jet_collections(jets, "cmssw", k, dR_max=0.1) for k in ["v1", "v2"]}
+    matches_ec = {k: M.match_jet_collections(jets, "cmssw_ec", k, dR_max=0.1) for k in ["v1", "v2"]}
     fig, ax = plt.subplots(figsize=(10, 7))
     b = np.linspace(0, 2, 101)
     for k in ["v1", "v2"]:
@@ -118,6 +123,41 @@ def main():
     ax.legend(fontsize=12, ncol=2)
     M.cms_label(ax)
     _sv(fig, outdir, "overlay_jet_response_vs_pt.png")
+
+    # ---- 1c. same two response plots with ENDCAP-ONLY reference jets
+    fig, ax = plt.subplots(figsize=(10, 7))
+    b = np.linspace(0, 2, 101)
+    for k in ["v1", "v2"]:
+        rp, tp = matches_ec[k]
+        r = tp / rp
+        ax.hist(r, bins=b, histtype="step", lw=2, color=C[k], density=True,
+                label=f"{k}  (n={len(r)}, mean={r.mean():.3f}, med={np.median(r):.3f}, std={r.std():.3f})")
+    ax.axvline(1.0, color="gray", ls=":", lw=1)
+    ax.set_xlabel("target jet $p_T$ / genjet $p_T$   (ref: $1.5<|\\eta|<3.2$ genjets)")
+    ax.set_ylabel("density")
+    ax.legend(fontsize=12)
+    M.cms_label(ax)
+    _sv(fig, outdir, "overlay_jet_response_endcapref.png")
+
+    fig, ax = plt.subplots(figsize=(10, 7))
+    for k in ["v1", "v2"]:
+        rp, tp = matches_ec[k]
+        r = tp / rp
+        med, lo, hi = [], [], []
+        for a_, b_ in zip(ptbins[:-1], ptbins[1:]):
+            m = (rp >= a_) & (rp < b_)
+            q = np.percentile(r[m], [25, 50, 75]) if m.sum() >= 10 else [np.nan] * 3
+            lo.append(q[0]); med.append(q[1]); hi.append(q[2])
+        ax.plot(centers, med, "o-", color=C[k], lw=2, label=f"{k} median")
+        ax.fill_between(centers, lo, hi, color=C[k], alpha=0.18, label=f"{k} IQR")
+    ax.axhline(1.0, color="gray", ls=":", lw=1)
+    ax.set_xscale("log")
+    ax.set_ylim(0, 1.6)
+    ax.set_xlabel("CMSSW genjet $p_T$ (GeV)   (ref: $1.5<|\\eta|<3.2$)")
+    ax.set_ylabel("target jet $p_T$ / genjet $p_T$")
+    ax.legend(fontsize=12, ncol=2)
+    M.cms_label(ax)
+    _sv(fig, outdir, "overlay_jet_response_vs_pt_endcapref.png")
 
     # ---- 2. jet pt + eta spectra overlay
     for var, bins, xl in [("pt", np.logspace(np.log10(3), 3, 60), "jet $p_T$ (GeV)"),
