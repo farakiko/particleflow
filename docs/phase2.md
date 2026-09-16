@@ -386,5 +386,10 @@ interactive pod), qcd/zll tfds pending storage math, v1-target builders once con
   final size as uncompressed temp buckets → build on **/scratch NVMe** (waves of 5 configs),
   rsync final ~87 GB to `/shared/mlpf-phase2/tfds` (= upstream's job_scratch pattern).
   First 10-way /shared-direct build was stopped for exactly this; ~10 min lost, no residue.
-- Projected all-3-samples tfds ≈ 87 (ttbar) + ~230 (qcd, bigger events) + ~45 (zll) ≈
-  **360 GB > 206 GB free** → ttbar-only first training; qcd/zll need capping or a /shared cleanup.
+- **✅ ALL THREE DATASETS BUILT + VERIFIED (2026-09-16)** after Farouk freed ~250G on /shared:
+  **ttbar 70G / qcd 189G / zll 23G = 282G** (185G free). Loader check over all 30 configs:
+  **train 15.34M events** (ttbar 3.52M, qcd 9.77M, zll 2.05M) + **test 1.90M**; X width 38,
+  all finite. zll built in one 10-wide wave (31 min); qcd in 3-wide guarded waves (~4.6 h,
+  wave [10] passed the 150G guard with 200G free). Spec `pyg-cms-phase2-v1` now trains on
+  all three. Big training ready: `kubectl apply -f kube/train-job.yml` (100k steps ×
+  batch 64 ≈ 6.4M examples ≈ 0.4 epoch; ~10–12 h on one MIG slice).
