@@ -358,6 +358,44 @@ count) → ttbar tfds config builds → 300-step 1-GPU train with decreasing los
 **[OPEN]** after smoke: full ttbar tfds (10 configs ∥), first real training as a k8s Job (not
 interactive pod), qcd/zll tfds pending storage math, v1-target builders once condor finishes.
 
+---
+
+## 12. v1 vs v2 target on the colleague's validation metrics (2026-09-16)
+
+Ran moanwar's `mlpf_ticl_analysis_plots.py` **verbatim** via the new driver
+`scripts/phase2/run_target_validation.py` (only file selection, a `genmet` backfill from
+pythia, and ycand alignment added — v2 stores no genmet / per-element cand). Inputs =
+**the same first-50 ttbar 0PU nano files (~15k events)**: v1 produced fresh locally with his
+current script (~4 s/file; the old `pkl_output/` files are a stale schema without `ytarget`),
+v2 = `pkl_links` (EOS-production schema). Plots:
+`plots/phase2/target_validation/{v1,v2}/` + side-by-side `compare_v1_v2.html`.
+
+| metric (his defs: jet ΔR<0.1, anti-kT 0.4, pT>3) | v1 (colleague) | v2 (run3style) |
+|---|---|---|
+| target particles (15k ev) | 211,668 (~14/ev) | 918,434 (~61/ev) |
+| target jets | 37,939 | 78,266 |
+| **jet response vs CMSSW genjets** | **0.871 ± 0.254** | **0.950 ± 0.196** |
+| target MET median (gen 28.0) | 35.0 | 43.6 |
+| stored-pythia jets | 47,885 | 260,701 |
+| tracks truth-matched | 11.4% of 764k | 34.6% of 1.91M |
+| had-tracksters truth-matched | (see plots) | 49.9% of 510k |
+
+Reading, with caveats:
+- **Response**: v2 closer to unity and tighter — consistent with §4 (dense target carries more
+  of the jet energy). His filter keeps a very pure but sparse target.
+- **⚠ his stored `pythia` is already gen-filtered** (5.4× fewer pythia jets than ours from the
+  same events) — his response reference and ours differ at the *gen* level too, not just target.
+- **⚠ "MET" here = endcap-only target vs full-event genMET** — both overshoot (v1 +25%, v2 +56%
+  median); an acceptance artifact, not a clean target metric at 0 PU.
+- **Element sets differ upstream of targets**: his Xelem has ~51 tracks/ev (selection applied?)
+  vs our ~127 GeneralTracks/ev; his type-2 count (45,136) exactly equals our GSF count —
+  his electron-elements look 1:1 with GSF tracks. To clarify in the discussion.
+- Env: added networkx/scipy/pandas/scikit-learn to root pixi env for his scripts.
+
+**[OPEN] discussion → decisions to propagate into our target** (from Farouk's chat with him):
+neutral splitting when a particle spans multiple tracksters, and the r_score/s_score roles.
+To revisit against §5/§9C where we chose argmax+merge and rejected score cuts at 0 PU.
+
 **Execution log (2026-09-14, all VERIFIED on cluster):**
 - v2 production on eos: ttbar **15,399** pkls (of 18,488 inputs — condor stragglers, mop-up
   later), qcd 25,136, zll 18,206; all written 12:45–13:27 the same day; schema-uniform
