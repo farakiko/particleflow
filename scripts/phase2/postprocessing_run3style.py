@@ -2,17 +2,17 @@
 """
 Run3-paper-style target postprocessing for the CMS Phase-2 TICL NanoAOD.
 
-Settled design (see docs/phase2_target_comparison.md), common to both calo variants:
+Settled design (see docs/phase2.md 13 and docs/phase2_target_comparison.md):
+  - calo = ticlTracksterLinks ALWAYS (post-linking; settled 2026-09, same as moanwar)
   - target = truth particles (SimTICLCandidates) with TRUTH energy (e- use raw_energy)
-  - charged (has trackIdx) -> its GeneralTrack ; neutral/photon -> its highest-shared-energy trackster
-  - ONE target per particle (primary element); multiple particles on one element -> merged
-  - NO gen-match filter, NO associator score cuts  (both discard real energy and degrade jet scale;
-    verified: charged filter 0.97->0.89, neutral cut 0.974->0.954 jet response)
+  - charged (has trackIdx) -> its GeneralTrack ; neutrals -> trackster(s) per --neutral-split
+  - NO gen-match filter EVER (it nulls real deposits; docs 12/13)
 
-The ONE design axis left open (to settle by full-scale training) is the calo collection:
-  --calo clue3d : ticlTrackstersCLUE3DHigh  (pre-linking raw tracksters; MLPF learns the linking)
-  --calo links  : ticlTracksterLinks        (post-linking, CMSSW-merged tracksters)
-Everything else is identical between the two -> a clean apples-to-apples comparison.
+Open design axes (flags; defaults = the trained v2 production):
+  --neutral-split argmax|fragment   one target per particle vs proportional truth split
+  --frag-select   score|share       fragment selection (moanwar r/s cuts vs energy floor)
+  --acceptance    simcand|anchor    rigid truth-eta window vs moanwar landing semantics
+"moanwar minus gen filter" = --neutral-split fragment --frag-select score --acceptance anchor
 
 Elements: all GeneralTrack (typ=1) + all GSFTrack (typ=2) + all <calo> tracksters (typ=4).
 Electrons prefer their GSF track (as the colleague's script does); other charged -> GeneralTrack.
@@ -30,7 +30,7 @@ JET_PT_MIN   = 3.0
 ENDCAP_LO, ENDCAP_HI = 1.5, 3.0   # HGCAL acceptance: target particles restricted to the endcap
 
 # calo collection choice (the only thing that differs between the two variants)
-CALO = {"clue3d": "ticlTrackstersCLUE3DHigh", "links": "ticlTracksterLinks"}
+TS = "ticlTracksterLinks"   # linked tracksters, settled — the only calo collection we use
 
 elem_branches = ["typ", "pt", "eta", "phi", "energy", "charge", "px", "py", "pz",
                  "em_energy", "nhits",
@@ -96,7 +96,8 @@ def cluster_jets(pt, eta, phi, energy):
 
 
 def process_event(E, iev, ts, neutral_split="argmax", frag_select="score",
-                  frag_min_share=0.05, frag_r_max=0.6, frag_s_max=0.9, acceptance="simcand"):
+                  frag_min_share=0.05, frag_r_max=0.6, frag_s_max=0.9, acceptance="simcand",
+                  min_simcand_pt=1.0):
     s2r = f"SimCP2{ts}ByHits"
     g = lambda b: ak.to_numpy(E[b][iev])
 
@@ -245,20 +246,17 @@ def process_event(E, iev, ts, neutral_split="argmax", frag_select="score",
         e = best_trackster(i)
         return [(e, 1.0)] if e is not None else []
 
-    def track_in_hgcal(ti):
-        # detector-landing acceptance for track anchors: the track EXTRAPOLATED to the
-        # HGCAL surface must land in the endcap window (moanwar's criterion, minus gen match)
-        return ENDCAP_LO <= abs(float(tke[ti])) <= ENDCAP_HI
-
     def in_acceptance(i, ti=None):
-        """simcand mode: truth direction in 1.5<|eta|<3 (rigid, momentum-level).
-        anchor mode: decided by where the ANCHOR lands — tracks via their HGCAL-surface
-        extrapolation; trackster-anchored particles are in by construction (tracksters
-        only exist in HGCAL), so no extra test there."""
+        """simcand mode: truth direction in 1.5<|eta|<3 (rigid window, both bounds).
+        anchor mode = moanwar's exact semantics (his :237-259, minus the gen match):
+        accept iff simcand pt >= min_simcand_pt AND ( |simcand eta| >= 1.5 OR the
+        linked track lands at |eta_HGCAL| >= 1.5 ). No upper eta bound."""
         if acceptance == "anchor":
-            if ti is not None:
-                return track_in_hgcal(ti)
-            return True  # trackster-anchored: element existence IS the acceptance
+            if float(cpt[i]) < min_simcand_pt:
+                return False
+            if abs(float(ceta[i])) >= ENDCAP_LO:
+                return True
+            return ti is not None and abs(float(tke[ti])) >= ENDCAP_LO
         return ENDCAP_LO <= abs(float(ceta[i])) <= ENDCAP_HI
 
     elem_to_parts = defaultdict(list)   # elem -> [(particle index, energy weight)]
@@ -343,11 +341,11 @@ def process_event(E, iev, ts, neutral_split="argmax", frag_select="score",
             "targetjet": targetjet, "candjet": candjet, "pythia": pythia}
 
 
-def process(infile, outfile, num_events=-1, calo="clue3d", neutral_split="argmax",
+def process(infile, outfile, num_events=-1, neutral_split="argmax",
             frag_select="score", frag_min_share=0.05, frag_r_max=0.6, frag_s_max=0.9,
-            acceptance="simcand"):
-    ts = CALO[calo]
-    print(f"opening {infile}  (calo={calo} -> {ts}, neutral_split={neutral_split}"
+            acceptance="simcand", min_simcand_pt=1.0):
+    ts = TS
+    print(f"opening {infile}  (calo={ts}, neutral_split={neutral_split}"
           + (f", frag_select={frag_select}" if neutral_split == "fragment" else "")
           + f", acceptance={acceptance})")
     try:
@@ -362,7 +360,8 @@ def process(infile, outfile, num_events=-1, calo="clue3d", neutral_split="argmax
         return
     out = []
     for iev in range(n):
-        out.append(process_event(E, iev, ts, neutral_split, frag_select, frag_min_share, frag_r_max, frag_s_max, acceptance))
+        out.append(process_event(E, iev, ts, neutral_split, frag_select, frag_min_share,
+                                 frag_r_max, frag_s_max, acceptance, min_simcand_pt))
         if (iev+1) % 50 == 0: print(f"  {iev+1}/{n}")
     with open(outfile, "wb") as f:
         pickle.dump(out, f, protocol=pickle.HIGHEST_PROTOCOL)
@@ -377,8 +376,6 @@ def main():
     ap.add_argument("--input", required=True)
     ap.add_argument("--output", required=True)
     ap.add_argument("--num-events", type=int, default=-1)
-    ap.add_argument("--calo", choices=list(CALO), default="clue3d",
-                    help="calo collection: clue3d (pre-linking) or links (CMSSW-merged)")
     ap.add_argument("--neutral-split", choices=["argmax", "fragment"], default="argmax",
                     help="neutral->trackster target: argmax (one per particle, run3-style) or "
                          "fragment (moanwar-style proportional split, no gen filter; truth energy "
@@ -393,10 +390,14 @@ def main():
                     help="score mode: keep fragment iff simToReco score <= this (moanwar 0.9)")
     ap.add_argument("--acceptance", choices=["simcand", "anchor"], default="simcand",
                     help="endcap acceptance: simcand (truth direction in 1.5<|eta|<3) or anchor "
-                         "(detector-landing: track HGCAL extrapolation / trackster existence)")
+                         "(moanwar landing semantics: |simcand eta|>=1.5 OR track lands >=1.5, "
+                         "plus the simcand pt floor; no upper eta bound)")
+    ap.add_argument("--min-simcand-pt", type=float, default=1.0,
+                    help="anchor mode only: simcand pt floor in GeV (moanwar SIMCAND_PT_MIN=1.0)")
     a = ap.parse_args()
-    process(a.input, a.output, a.num_events, a.calo, a.neutral_split,
-            a.frag_select, a.frag_min_share, a.frag_r_max, a.frag_s_max, a.acceptance)
+    process(a.input, a.output, a.num_events, a.neutral_split,
+            a.frag_select, a.frag_min_share, a.frag_r_max, a.frag_s_max, a.acceptance,
+            a.min_simcand_pt)
 
 
 if __name__ == "__main__":
