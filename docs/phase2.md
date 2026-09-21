@@ -368,13 +368,23 @@ tracksters ∝ sharedEnergy (share ≥5%, weights **renormalized → energy exac
 **no gen filter**, unlike his). Fragments keep the particle direction → target jets
 identical to argmax by construction (verified; the differences are per-element).
 
-| per-trackster | argmax | fragment |
-|---|---|---|
-| null fraction | 50.1% | **38.7%** |
-| nhad labels | 10.2% | 15.7% (+54%) |
-| nhad median regression correction | ×3.1 | **×2.2** |
-| nhad >5× correction tail | 26.5% | **17.0%** |
-| photon | — | ~unchanged (slight 2nd-fragment tail 3.1→5.3%) |
+Second variant (`--frag-select score`, moanwar-SYNCHRONIZED): keep fragment iff
+recoToSim ≤0.6 AND simToReco ≤0.9 (his cuts), THEN renormalize over survivors
+(redistribution after filtering, per Farouk); particle dropped only if ALL fragments fail.
+
+| per-trackster | argmax | frag-share | frag-score (his cuts) |
+|---|---|---|---|
+| target ΣE retained | 100% | **100%** | **92.5%** |
+| null fraction | 50.1% | **38.7%** | 50.1% |
+| nhad labels | 10.2% | 15.7% | 8.4% |
+| nhad median correction | ×3.1 | **×2.2** | ×2.4 |
+| nhad >5× correction tail | 26.5% | 17.0% | **16.1%** |
+| photon IQR | 0.438 | 0.382 | **0.335** |
+| endcap jet response @10–15 GeV | 0.94 | 0.94 (identical) | **0.91**, fatter low tail |
+
+The score cuts at 0 PU mostly DELETE single-trackster neutrals (all-fail case) rather than
+trim multi-trackster ones → cleanest per-fragment stats but −7.5% target energy and LESS
+nhad supervision than argmax. frag-share keeps conservation + the densest supervision.
 
 Interpretation: fragmentation removes the **shower-topology variance** from the nhad
 regression target and supervises every energy-carrying trackster (attacks both nhad→null
