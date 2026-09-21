@@ -86,6 +86,45 @@ CLASS_LABELS = {
     "cms_phase2": CLASS_LABELS_CLIC,
 }
 
+# Datasets whose target/model only covers part of the detector: jet plots must
+# restrict ALL collections (incl. the full-detector gen reference) to that
+# acceptance, else gen-vs-target distributions differ by construction.
+PLOT_JET_ETA_CUT = {
+    "cms_phase2": (1.5, 3.0),  # HGCAL endcap
+}
+
+
+def apply_jet_eta_cut(yvals, dataset):
+    """Restrict jet collections and matched-pair/ratio arrays to the dataset's
+    jet |eta| acceptance window (no-op for datasets without PLOT_JET_ETA_CUT).
+    Matched pairs are selected by the REFERENCE jet's eta. Must be called after
+    load_eval_data (i.e. after compute_jet_ratio has used the jet indices)."""
+    cut = PLOT_JET_ETA_CUT.get(dataset)
+    if cut is None:
+        return yvals
+    lo, hi = cut
+    out = dict(yvals)
+    for typ in ["gen", "cand", "pred", "target", "pred_nopu"]:
+        ek = f"jets_{typ}_eta"
+        if ek in out:
+            m = (abs(out[ek]) > lo) & (abs(out[ek]) < hi)
+            for k in ["pt", "eta", "phi", "energy"]:
+                kk = f"jets_{typ}_{k}"
+                if kk in out:
+                    out[kk] = out[kk][m]
+    for m1, m2 in [("gen", "pred"), ("gen", "pred_nopu"), ("gen", "cand"),
+                   ("gen", "target"), ("target", "pred"), ("target", "cand")]:
+        refeta = out.get(f"jet_{m1}_to_{m2}_{m1}eta")
+        if refeta is None:
+            continue
+        msk = (np.abs(refeta) > lo) & (np.abs(refeta) < hi)
+        for key in [f"jet_{m1}_to_{m2}_{m1}pt", f"jet_{m1}_to_{m2}_{m2}pt",
+                    f"jet_{m1}_to_{m2}_{m1}eta", f"jet_{m1}_to_{m2}_{m2}eta",
+                    f"jet_ratio_{m1}_to_{m2}_pt", f"jet_ratio_{m1}_to_{m2}_eta"]:
+            if key in out:
+                out[key] = out[key][msk]
+    return out
+
 labels = {
     "met": "$p_{\mathrm{T}}^{\mathrm{miss}}$ (GeV)",
     "gen_met": "$p_{\mathrm{T,ptcl}}^\mathrm{miss}$ (GeV)",

@@ -15,6 +15,7 @@ from mlpf.jet_utils import match_two_jet_collections
 from mlpf.plotting.plot_utils import (
     # get_class_names,
     # compute_met_and_ratio,
+    apply_jet_eta_cut,
     load_eval_data,
     plot_jets,
     plot_jet_ratio,
@@ -195,6 +196,7 @@ def make_plots(outpath, sample, dataset, dir_name="", num_test_events=None):
     _logger.info(f"Loading data for plotting from {pred_path}")
     yvals, X, _ = load_eval_data(str(pred_path / "*.parquet"), num_test_events)
     _logger.info(f"Loaded data for plotting from {pred_path}")
+    yvals = apply_jet_eta_cut(yvals, ds_name)
 
     plot_num_elements(X, cp_dir=plots_path)
     _logger.info("Plotted number of elements")
