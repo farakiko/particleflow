@@ -174,6 +174,30 @@ def main():
     M.cms_label(ax)
     _sv(fig, outdir, "overlay_jet_response_vs_pt_endcapref.png")
 
+    # ---- 1d. jet resolution: IQR/median of the response vs genjet pT
+    for mm, tag in [(matches, ""), (matches_ec, "_endcapref")]:
+        fig, ax = plt.subplots(figsize=(10, 7))
+        for k in ["v1", "v2"]:
+            rp, tp = mm[k]
+            r = tp / rp
+            xs, ys = [], []
+            for a_, b_ in zip(ptbins[:-1], ptbins[1:]):
+                m = (rp >= a_) & (rp < b_)
+                if m.sum() >= 20:
+                    q1, q2, q3 = np.percentile(r[m], [25, 50, 75])
+                    if q2 > 0:
+                        xs.append(np.sqrt(a_ * b_))
+                        ys.append((q3 - q1) / q2)
+            ax.plot(xs, ys, "o-", color=C[k], lw=2, label=f"{LBL[k]}")
+        ax.set_xscale("log")
+        ax.set_ylim(0, None)
+        ax.set_xlabel("CMSSW genjet $p_T$ (GeV)" + ("   (ref: $1.5<|\\eta|<3.2$)" if tag else ""))
+        ax.set_ylabel("jet response IQR / median")
+        ax.legend(fontsize=13)
+        ax.grid(alpha=0.3)
+        M.cms_label(ax)
+        _sv(fig, outdir, f"overlay_jet_resolution_vs_pt{tag}.png")
+
     # ---- 2. jet pt + eta spectra overlay
     for var, bins, xl in [("pt", np.logspace(np.log10(3), 3, 60), "jet $p_T$ (GeV)"),
                           ("eta", np.linspace(-5, 5, 101), "jet $\\eta$")]:
