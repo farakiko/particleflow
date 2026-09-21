@@ -386,6 +386,22 @@ The score cuts at 0 PU mostly DELETE single-trackster neutrals (all-fail case) r
 trim multi-trackster ones → cleanest per-fragment stats but −7.5% target energy and LESS
 nhad supervision than argmax. frag-share keeps conservation + the densest supervision.
 
+**Third knob — `--acceptance {simcand,anchor}` (2026-09-21, VERIFIED):** `anchor` = endcap
+membership by where the anchor LANDS (track extrapolated to the HGCAL surface / trackster
+existence) — moanwar's acceptance idea minus the gen matching; `simcand` = truth direction
+in 1.5<|η|<3 (default, regression-verified byte-identical to production). 30k ttbar:
++1% targets, **+9.6% target energy**; 5.8% of anchor targets have truth |η|<1.5 and 3.7%
+|η|>3.0 — hard boundary-benders recovered. ⚠ eval references must then follow the landing
+definition (or quote a fiducial core), else edge response >1 artifacts.
+
+**His gen-match filter is TWO-SIDED [VERIFIED]**: `matched_simcand_indices` gates every
+connection collector (`:564/:614/:651/:691/:726`) → unmatched simcands (secondaries, sub-1-GeV
+gen partners, ΔR>0.1 smears) are NULL in his target — false-negative labels on real deposits
+(cf. §7: 23% of our chad targets are gen-partnerless secondaries). Counter-proposal to bring
+to him: fragmentation ✓ (adopt), detector-landing acceptance ✓ (adopt), gen-match target
+gating ✗, score cuts = purity/completeness dial (0 PU: −7.5% E; revisit at PU200 or as §9C
+loss weights).
+
 Interpretation: fragmentation removes the **shower-topology variance** from the nhad
 regression target and supervises every energy-carrying trackster (attacks both nhad→null
 0.30 and nhad→γ 0.40 confusions); the irreducible capture/response spread (IQR ~0.95)
