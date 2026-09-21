@@ -7,7 +7,7 @@ arguments  = $(Process) $Fnx(filelist)
 getenv     = TRUE
 
 # our postprocessing is self-contained -> ship both variants + the filelist (wrapper picks by PP_MODE)
-transfer_input_files = ../postprocessing_run3style.py, ../postprocessing_ticl_ttbar_nopu.py, ../postprocessing_mohamed.py, $(filelist)
+transfer_input_files = ../postprocessing_run3style.py, ../postprocessing_ticl_ttbar_nopu.py, ../postprocessing_ticl_acceptance.py, ../postprocessing_mohamed.py, $(filelist)
 should_transfer_files = YES
 when_to_transfer_output = ON_EXIT
 transfer_output_files = ""

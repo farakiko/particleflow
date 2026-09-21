@@ -18,13 +18,14 @@ MLPF_VENV=${MLPF_VENV:-/afs/cern.ch/work/f/fmokhtar/private/mlpf_env}
 LCG_SETUP=${LCG_SETUP:-/cvmfs/sft.cern.ch/lcg/views/LCG_106/x86_64-el9-gcc13-opt/setup.sh}
 EOS_REDIR=${EOS_REDIR:-root://eosuser.cern.ch}
 EOS_PATH=${EOS_PATH:-/eos/user/f/fmokhtar/mlpf/phase2/pkl_links}
-PP_MODE=${PP_MODE:-run3style}          # run3style = ours (v2, +GSF) | ticl = colleague's verbatim script (v1) | mohamed = our port (v1/v3)
+PP_MODE=${PP_MODE:-acceptance}         # acceptance = AGREED v3 (his script minus gen matching) | run3style = ours (v2) | ticl = his verbatim (v1) | mohamed = our port
 GEN_FILTER=${GEN_FILTER:-on}           # mohamed only: on = v1 (gen-match filter)  |  off = v3 (endcap cut, keep cuts+frag)
 case "${PP_MODE}" in
   run3style) PP_SCRIPT=postprocessing_run3style.py;       OUT_PREFIX=run3style; PP_ARGS=() ;;
   ticl)      PP_SCRIPT=postprocessing_ticl_ttbar_nopu.py; OUT_PREFIX=ticl;      PP_ARGS=() ;;   # colleague's script; gen-filter baked in
+  acceptance) PP_SCRIPT=postprocessing_ticl_acceptance.py; OUT_PREFIX=acc;      PP_ARGS=(--num-workers 1) ;;  # v3: his script, gen matching -> symmetric acceptance (docs 13)
   mohamed)   PP_SCRIPT=postprocessing_mohamed.py;         OUT_PREFIX=mohamed;   PP_ARGS=(--gen-filter "${GEN_FILTER}") ;;
-  *) echo "unknown PP_MODE=${PP_MODE} (want run3style|ticl|mohamed)"; exit 1 ;;
+  *) echo "unknown PP_MODE=${PP_MODE} (want acceptance|run3style|ticl|mohamed)"; exit 1 ;;
 esac
 
 echo "=== job ${JOB_INDEX} on $(hostname) mode=${PP_MODE} args=${PP_ARGS[*]} $(date) ==="
@@ -34,7 +35,7 @@ source "${LCG_SETUP}"
 source "${MLPF_VENV}/bin/activate"
 set -u
 IMPORTS="uproot,awkward,numpy,fastjet,vector"
-[ "${PP_MODE}" = "ticl" ] && IMPORTS="${IMPORTS},networkx,tqdm"   # colleague's script needs networkx/tqdm
+case "${PP_MODE}" in ticl|acceptance) IMPORTS="${IMPORTS},networkx,tqdm";; esac   # his-script family needs networkx/tqdm
 python3 -c "import ${IMPORTS}" || { echo "ENV MISSING PACKAGES (see setup_venv.sh)"; exit 1; }
 
 START=$(( JOB_INDEX * FILES_PER_JOB + 1 ))

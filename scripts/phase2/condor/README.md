@@ -19,33 +19,35 @@ Both read `/eos` NanoAOD directly and write pkls back to your `/eos` via `xrdcp`
 | `postprocess.sub` | condor submit description (parameterized by sample/filelist/njobs) |
 | `wrapper.sh` | per-job: setup env, process this job's slice, `xrdcp` to eos (resumable) |
 
-## Run (on lxplus) — two production datasets
+## Run (on lxplus)
 
-**v2 (ours, run3style + GSF)** and **v1 (colleague's verbatim script)** share this flow; they differ
-only in `PP_MODE` and `EOS_PATH`.
+**v3 = the AGREED production (2026-09-22)**: moanwar's script with the gen↔sim ΔR matching
+replaced by his own symmetric acceptance (`postprocessing_ticl_acceptance.py`; one-function
+diff, docs/phase2.md 13). Sizing: ~6.6 MB/pkl → full 63,626-file production ≈ **420 GB** on eos.
+Older recipes (v2 run3style, v1 verbatim, mohamed port) remain selectable via `PP_MODE`.
 
 ```bash
 # 0. get the code
 git clone -b phase2 https://github.com/farakiko/particleflow ~/particleflow   # or: cd ~/particleflow && git pull
 cd ~/particleflow/scripts/phase2/condor
 
-# 1. one-time env (LCG_106 provides uproot/awkward/numpy/vector; we add fastjet + networkx/tqdm)
+# 1. one-time env (already built): LCG_106 + fastjet + networkx/tqdm
 MLPF_VENV=/afs/cern.ch/work/f/fmokhtar/private/mlpf_env bash setup_venv.sh
 
-# 2. (recommended) smoke-test each mode on 2 real files before the full submit:
-cp ../postprocessing_run3style.py ../postprocessing_ticl_ttbar_nopu.py .
+# 2. smoke-test the v3 mode on 2 real files before the full submit:
+cp ../postprocessing_ticl_acceptance.py ../postprocessing_ticl_ttbar_nopu.py .
 mkdir -p filelists logs
 find /eos/cms/store/group/dpg_hgcal/comm_hgcal/moanwar/mlpf/nano/zll_0pu -name '*.root' | head -2 > filelists/test.txt
 xrdfs root://eosuser.cern.ch mkdir -p /eos/user/f/fmokhtar/mlpf/phase2/pkl_test/zll_0pu
-PP_MODE=run3style FILES_PER_JOB=2 EOS_PATH=/eos/user/f/fmokhtar/mlpf/phase2/pkl_test bash wrapper.sh 0 filelists/test.txt  # want ok=2
-PP_MODE=ticl      FILES_PER_JOB=2 EOS_PATH=/eos/user/f/fmokhtar/mlpf/phase2/pkl_test bash wrapper.sh 0 filelists/test.txt  # want ok=2
-rm -f postprocessing_run3style.py postprocessing_ticl_ttbar_nopu.py
+PP_MODE=acceptance FILES_PER_JOB=2 EOS_PATH=/eos/user/f/fmokhtar/mlpf/phase2/pkl_test bash wrapper.sh 0 filelists/test.txt  # want ok=2
+rm -f postprocessing_ticl_acceptance.py postprocessing_ticl_ttbar_nopu.py
 
-# 3a. submit v2 (run3style, links, +GSF)         ->  pkl_links_v2/<sample>/run3style_<stem>.pkl
-PP_MODE=run3style EOS_PATH=/eos/user/f/fmokhtar/mlpf/phase2/pkl_links_v2 bash submit.sh
+# 3. submit v3 (THE production)                   ->  pkl_v3/<sample>/acc_<stem>.pkl
+PP_MODE=acceptance EOS_PATH=/eos/user/f/fmokhtar/mlpf/phase2/pkl_v3 bash submit.sh
 
-# 3b. submit v1 (colleague's verbatim script)     ->  pkl_links_v1/<sample>/ticl_<stem>.pkl
-PP_MODE=ticl      EOS_PATH=/eos/user/f/fmokhtar/mlpf/phase2/pkl_links_v1 bash submit.sh
+# (legacy recipes)
+# PP_MODE=run3style EOS_PATH=.../pkl_links_v2 bash submit.sh    # v2, ours
+# PP_MODE=ticl      EOS_PATH=.../pkl_links_v1 bash submit.sh    # v1, his verbatim
 ```
 
 > **Regenerating v2:** the GSF fix changed the v2 schema (37 raw `Xelem` fields, added `gsf_type`), so
