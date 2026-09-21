@@ -62,6 +62,10 @@ def main():
     ap.add_argument("--max-files", type=int, default=50)
     ap.add_argument("--label1", default="v1", help="legend label for the --v1-glob target")
     ap.add_argument("--label2", default="v2", help="legend label for the --v2-glob target")
+    ap.add_argument("--gen-eta-lo", type=float, default=1.5,
+                    help="gen reference restricted to gen_eta_lo<|eta|<gen_eta_hi in particle-level "
+                         "panels (targets are endcap-only; full-detector gen would be ~3.6x overpopulated)")
+    ap.add_argument("--gen-eta-hi", type=float, default=3.0)
     a = ap.parse_args()
     global LBL
     LBL = {"v1": a.label1, "v2": a.label2, "gen": "gen"}
@@ -73,7 +77,14 @@ def main():
     print("loading v2...")
     awk2, flat2, _, genjet2 = load_version(a.v2_glob, a.max_files)
 
-    # ---- jets: cluster both targets + (unfiltered) gen from v2 pythia
+    # gen reference for particle-level panels: endcap window matched to the targets
+    # (response panels keep the FULL cmssw genjet list; matching restricts them there)
+    gec = (abs(awk2["pythia"]["eta"]) > a.gen_eta_lo) & (abs(awk2["pythia"]["eta"]) < a.gen_eta_hi)
+    pyec = {f: awk2["pythia"][f][gec] for f in ["pt", "eta", "phi", "energy", "pid"]}
+    gec_flat = (np.abs(flat2["pythia"]["eta"]) > a.gen_eta_lo) & (np.abs(flat2["pythia"]["eta"]) < a.gen_eta_hi)
+    gen_note = f"$({a.gen_eta_lo}<|\\eta|<{a.gen_eta_hi})$"
+
+    # ---- jets: cluster both targets + endcap gen from v2 pythia
     print("clustering...")
     jets = {
         "cmssw": genjet2,  # CMSSW genjets, identical content in both files
@@ -81,8 +92,7 @@ def main():
                                    awk1["ytarget"]["phi"], awk1["ytarget"]["energy"]),
         "v2": M.cluster_jets_batch(awk2["ytarget"]["pt"], awk2["ytarget"]["eta"],
                                    awk2["ytarget"]["phi"], awk2["ytarget"]["energy"]),
-        "gen": M.cluster_jets_batch(awk2["pythia"]["pt"], awk2["pythia"]["eta"],
-                                    awk2["pythia"]["phi"], awk2["pythia"]["energy"]),
+        "gen": M.cluster_jets_batch(pyec["pt"], pyec["eta"], pyec["phi"], pyec["energy"]),
     }
 
     # endcap-only reference (moanwar's convention: his stored genjets are 1.5<|eta|<3.2)
@@ -168,9 +178,12 @@ def main():
     for var, bins, xl in [("pt", np.logspace(np.log10(3), 3, 60), "jet $p_T$ (GeV)"),
                           ("eta", np.linspace(-5, 5, 101), "jet $\\eta$")]:
         fig, ax = plt.subplots(figsize=(10, 7))
-        for k, lbl in [("cmssw", "CMSSW genjets"), ("gen", "pythia jets (unfiltered)"),
+        for k, lbl in [("cmssw", f"CMSSW genjets {gen_note}"), ("gen", f"pythia jets {gen_note}"),
                        ("v1", f"{LBL['v1']} target jets"), ("v2", f"{LBL['v2']} target jets")]:
-            vals = ak.to_numpy(ak.flatten(getattr(jets[k], var)))
+            jv = jets[k]
+            if k == "cmssw":  # full-detector list -> restrict the CURVE to the endcap window
+                jv = jv[(abs(jv.eta) > a.gen_eta_lo) & (abs(jv.eta) < a.gen_eta_hi)]
+            vals = ak.to_numpy(ak.flatten(getattr(jv, var)))
             ax.hist(vals, bins=bins, histtype="step", lw=2,
                     color=C.get(k, "gray"), ls="--" if k == "cmssw" else "-",
                     label=f"{lbl} (n={len(vals)})")
@@ -183,16 +196,16 @@ def main():
         M.cms_label(ax)
         _sv(fig, outdir, f"overlay_jet_{var}.png")
 
-    # ---- 3. per-PID particle pt + eta spectra (gen from v2 pythia, unfiltered)
+    # ---- 3. per-PID particle pt + eta spectra (gen restricted to the endcap window)
     for pid, pname in PID_NAMES.items():
-        gm = flat2["pythia"]["pid"] == pid
+        gm = (flat2["pythia"]["pid"] == pid) & gec_flat
         m1 = flat1["ytarget"]["pid"] == pid
         m2 = flat2["ytarget"]["pid"] == pid
         for var, bins, xl in [("pt", np.logspace(-2, 3, 80), f"{pname} $p_T$ (GeV)"),
                               ("eta", np.linspace(-5, 5, 101), f"{pname} $\\eta$")]:
             fig, ax = plt.subplots(figsize=(10, 7))
             ax.hist(flat2["pythia"][var][gm], bins=bins, histtype="step", lw=2, color=C["gen"],
-                    ls="--", label=f"pythia (n={int(gm.sum())})")
+                    ls="--", label=f"pythia {gen_note} (n={int(gm.sum())})")
             ax.hist(flat1["ytarget"][var][m1], bins=bins, histtype="step", lw=2, color=C["v1"],
                     label=f"v1 target (n={int(m1.sum())})")
             ax.hist(flat2["ytarget"][var][m2], bins=bins, histtype="step", lw=2, color=C["v2"],
@@ -206,9 +219,9 @@ def main():
             M.cms_label(ax)
             _sv(fig, outdir, f"overlay_{var}_pid{pid}.png")
 
-    # ---- 4. per-event sum-pT ratio to gen
+    # ---- 4. per-event sum-pT ratio to gen (endcap-window gen)
     sums = {
-        "gen": ak.to_numpy(ak.sum(awk2["pythia"]["pt"], axis=1)),
+        "gen": ak.to_numpy(ak.sum(pyec["pt"], axis=1)),
         "v1": ak.to_numpy(ak.sum(awk1["ytarget"]["pt"], axis=1)),
         "v2": ak.to_numpy(ak.sum(awk2["ytarget"]["pt"], axis=1)),
     }
@@ -220,7 +233,7 @@ def main():
         ax.hist(r, bins=b, histtype="step", lw=2, color=C[k], density=True,
                 label=f"{LBL[k]}  (med={np.median(r):.3f})")
     ax.axvline(1.0, color="gray", ls=":", lw=1)
-    ax.set_xlabel("$\\Sigma p_T$(target) / $\\Sigma p_T$(pythia) per event")
+    ax.set_xlabel(f"$\\Sigma p_T$(target) / $\\Sigma p_T$(pythia {gen_note}) per event")
     ax.set_ylabel("density")
     ax.legend(fontsize=13)
     M.cms_label(ax)
@@ -229,11 +242,12 @@ def main():
     # ---- 5. particle multiplicity per event
     fig, ax = plt.subplots(figsize=(10, 7))
     b = np.linspace(0, 250, 126)
-    for k, arr in [("gen", ak.num(awk2["pythia"]["pt"])), ("v1", ak.num(awk1["ytarget"]["pt"])),
+    for k, arr in [("gen", ak.num(pyec["pt"])), ("v1", ak.num(awk1["ytarget"]["pt"])),
                    ("v2", ak.num(awk2["ytarget"]["pt"]))]:
         vals = ak.to_numpy(arr)
+        lbl = f"gen {gen_note}" if k == "gen" else LBL[k]
         ax.hist(vals, bins=b, histtype="step", lw=2, color=C[k],
-                ls="--" if k == "gen" else "-", label=f"{LBL[k]} (mean={vals.mean():.1f})")
+                ls="--" if k == "gen" else "-", label=f"{lbl} (mean={vals.mean():.1f})")
     ax.set_yscale("log")
     ax.set_xlabel("particles / event")
     ax.set_ylabel("events / bin")
