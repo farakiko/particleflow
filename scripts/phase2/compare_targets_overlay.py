@@ -30,6 +30,7 @@ mplhep.style.use("CMS")
 
 PID_NAMES = {211: "charged hadron", 130: "neutral hadron", 22: "photon", 11: "electron", 13: "muon"}
 C = {"gen": "black", "v1": "tab:orange", "v2": "tab:blue"}
+LBL = {"v1": "v1", "v2": "v2", "gen": "gen"}  # legend names; overridden by --label1/--label2
 
 
 def _from_launch(p):
@@ -59,7 +60,11 @@ def main():
     ap.add_argument("--v2-glob", required=True)
     ap.add_argument("--outdir", required=True)
     ap.add_argument("--max-files", type=int, default=50)
+    ap.add_argument("--label1", default="v1", help="legend label for the --v1-glob target")
+    ap.add_argument("--label2", default="v2", help="legend label for the --v2-glob target")
     a = ap.parse_args()
+    global LBL
+    LBL = {"v1": a.label1, "v2": a.label2, "gen": "gen"}
     outdir = _from_launch(a.outdir)
     os.makedirs(outdir, exist_ok=True)
 
@@ -93,7 +98,7 @@ def main():
         rp, tp = matches[k]
         r = tp / rp
         ax.hist(r, bins=b, histtype="step", lw=2, color=C[k], density=True,
-                label=f"{k} target  (n={len(r)}, mean={r.mean():.3f}, med={np.median(r):.3f}, std={r.std():.3f})")
+                label=f"{LBL[k]} target  (n={len(r)}, mean={r.mean():.3f}, med={np.median(r):.3f}, std={r.std():.3f})")
     ax.axvline(1.0, color="gray", ls=":", lw=1)
     ax.set_xlabel("target jet $p_T$ / CMSSW genjet $p_T$  ($\\Delta R<0.1$)")
     ax.set_ylabel("density")
@@ -113,8 +118,8 @@ def main():
             m = (rp >= a_) & (rp < b_)
             q = np.percentile(r[m], [25, 50, 75]) if m.sum() >= 10 else [np.nan] * 3
             lo.append(q[0]); med.append(q[1]); hi.append(q[2])
-        ax.plot(centers, med, "o-", color=C[k], lw=2, label=f"{k} median")
-        ax.fill_between(centers, lo, hi, color=C[k], alpha=0.18, label=f"{k} IQR")
+        ax.plot(centers, med, "o-", color=C[k], lw=2, label=f"{LBL[k]} median")
+        ax.fill_between(centers, lo, hi, color=C[k], alpha=0.18, label=f"{LBL[k]} IQR")
     ax.axhline(1.0, color="gray", ls=":", lw=1)
     ax.set_xscale("log")
     ax.set_ylim(0, 1.6)
@@ -131,7 +136,7 @@ def main():
         rp, tp = matches_ec[k]
         r = tp / rp
         ax.hist(r, bins=b, histtype="step", lw=2, color=C[k], density=True,
-                label=f"{k}  (n={len(r)}, mean={r.mean():.3f}, med={np.median(r):.3f}, std={r.std():.3f})")
+                label=f"{LBL[k]}  (n={len(r)}, mean={r.mean():.3f}, med={np.median(r):.3f}, std={r.std():.3f})")
     ax.axvline(1.0, color="gray", ls=":", lw=1)
     ax.set_xlabel("target jet $p_T$ / genjet $p_T$   (ref: $1.5<|\\eta|<3.2$ genjets)")
     ax.set_ylabel("density")
@@ -148,8 +153,8 @@ def main():
             m = (rp >= a_) & (rp < b_)
             q = np.percentile(r[m], [25, 50, 75]) if m.sum() >= 10 else [np.nan] * 3
             lo.append(q[0]); med.append(q[1]); hi.append(q[2])
-        ax.plot(centers, med, "o-", color=C[k], lw=2, label=f"{k} median")
-        ax.fill_between(centers, lo, hi, color=C[k], alpha=0.18, label=f"{k} IQR")
+        ax.plot(centers, med, "o-", color=C[k], lw=2, label=f"{LBL[k]} median")
+        ax.fill_between(centers, lo, hi, color=C[k], alpha=0.18, label=f"{LBL[k]} IQR")
     ax.axhline(1.0, color="gray", ls=":", lw=1)
     ax.set_xscale("log")
     ax.set_ylim(0, 1.6)
@@ -164,7 +169,7 @@ def main():
                           ("eta", np.linspace(-5, 5, 101), "jet $\\eta$")]:
         fig, ax = plt.subplots(figsize=(10, 7))
         for k, lbl in [("cmssw", "CMSSW genjets"), ("gen", "pythia jets (unfiltered)"),
-                       ("v1", "v1 target jets"), ("v2", "v2 target jets")]:
+                       ("v1", f"{LBL['v1']} target jets"), ("v2", f"{LBL['v2']} target jets")]:
             vals = ak.to_numpy(ak.flatten(getattr(jets[k], var)))
             ax.hist(vals, bins=bins, histtype="step", lw=2,
                     color=C.get(k, "gray"), ls="--" if k == "cmssw" else "-",
@@ -213,7 +218,7 @@ def main():
     for k in ["v1", "v2"]:
         r = sums[k][ok] / sums["gen"][ok]
         ax.hist(r, bins=b, histtype="step", lw=2, color=C[k], density=True,
-                label=f"{k}  (med={np.median(r):.3f})")
+                label=f"{LBL[k]}  (med={np.median(r):.3f})")
     ax.axvline(1.0, color="gray", ls=":", lw=1)
     ax.set_xlabel("$\\Sigma p_T$(target) / $\\Sigma p_T$(pythia) per event")
     ax.set_ylabel("density")
@@ -228,7 +233,7 @@ def main():
                    ("v2", ak.num(awk2["ytarget"]["pt"]))]:
         vals = ak.to_numpy(arr)
         ax.hist(vals, bins=b, histtype="step", lw=2, color=C[k],
-                ls="--" if k == "gen" else "-", label=f"{k} (mean={vals.mean():.1f})")
+                ls="--" if k == "gen" else "-", label=f"{LBL[k]} (mean={vals.mean():.1f})")
     ax.set_yscale("log")
     ax.set_xlabel("particles / event")
     ax.set_ylabel("events / bin")
@@ -249,7 +254,7 @@ def main():
             frac = [float(matched[(en >= lo) & (en < hi)].mean()) if ((en >= lo) & (en < hi)).sum() else np.nan
                     for lo, hi in zip(bins[:-1], bins[1:])]
             ax.plot(bins[:-1], frac, ".-", lw=2, color=C[k],
-                    label=f"{k} ({int(msk.sum())} elements, {100*matched.mean():.1f}% matched)")
+                    label=f"{LBL[k]} ({int(msk.sum())} elements, {100*matched.mean():.1f}% matched)")
         ax.set_xscale("log")
         ax.set_ylim(0, 1.1)
         ax.set_xlabel(f"{tname}: element energy (GeV)")

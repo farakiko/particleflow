@@ -93,7 +93,7 @@ def cluster_jets(pt, eta, phi, energy):
             if jets else np.zeros((0, 4), np.float32))
 
 
-def process_event(E, iev, ts):
+def process_event(E, iev, ts, neutral_split="argmax", frag_min_share=0.05):
     s2r = f"SimCP2{ts}ByHits"
     g = lambda b: ak.to_numpy(E[b][iev])
 
@@ -200,7 +200,33 @@ def process_event(E, iev, ts):
                 return n_trk + b
         return None
 
-    elem_to_parts = defaultdict(list)
+    def trackster_fragments(i):
+        """All associated tracksters of particle i with their shared-energy weights
+        (moanwar-style fragmentation, but NO gen filter / score cuts): weights are
+        renormalized over the kept fragments so the FULL truth energy is conserved.
+        Fragments below frag_min_share of the particle's total shared energy are
+        dropped (junk associations, cf. docs 9C) and their weight redistributed."""
+        ii = aidx[off[i]:off[i+1]]; ss = ashe[off[i]:off[i+1]]
+        ok = (ss > 0) & (ii >= 0) & (ii < n_ts)
+        if not ok.any():
+            return []
+        ii, ss = ii[ok], ss[ok]
+        w = ss / ss.sum()
+        keep = w >= frag_min_share
+        if not keep.any():
+            keep = w == w.max()
+        ii, w = ii[keep], w[keep]
+        w = w / w.sum()
+        return [(n_trk + int(t), float(x)) for t, x in zip(ii, w)]
+
+    def neutral_elems(i):
+        # argmax: whole particle on its best trackster; fragment: split across tracksters
+        if neutral_split == "fragment":
+            return trackster_fragments(i)
+        e = best_trackster(i)
+        return [(e, 1.0)] if e is not None else []
+
+    elem_to_parts = defaultdict(list)   # elem -> [(particle index, energy weight)]
     for i in range(len(pid)):
         # HGCAL endcap only: a truth particle becomes a target only if it's in 1.5<|eta|<3
         # (drops barrel charged tracks + the forward |eta|>3 tail; keeps target == gen acceptance)
@@ -212,33 +238,36 @@ def process_event(E, iev, ts):
             gids = gflat[goff[i]:goff[i+1]]
             gid = next((int(x) for x in gids if 0 <= int(x) < n_gsf), None)
             if gid is not None:
-                elem_to_parts[gbase + gid].append(i); continue
+                elem_to_parts[gbase + gid].append((i, 1.0)); continue
             ti = int(ctrk[i])
             if ti != SENTINEL and 0 <= ti < n_trk:
-                elem_to_parts[ti].append(i); continue
-            e = best_trackster(i)
-            if e is not None:
-                elem_to_parts[e].append(i)
+                elem_to_parts[ti].append((i, 1.0)); continue
+            for e, w in neutral_elems(i):
+                elem_to_parts[e].append((i, w))
             continue
         charged = (apid in CHARGED_PIDS) and (int(ctrk[i]) != SENTINEL)
         if charged:
             ti = int(ctrk[i])
             if 0 <= ti < n_trk:
-                elem_to_parts[ti].append(i)
+                elem_to_parts[ti].append((i, 1.0))
         else:
-            e = best_trackster(i)
-            if e is not None:
-                elem_to_parts[e].append(i)
+            for e, w in neutral_elems(i):
+                elem_to_parts[e].append((i, w))
 
     ytarget = np.recarray((n_el,), dtype=[(n, np.float32) for n in particle_feature_order])
     ytarget.fill(0.0); ytarget["jet_idx"] = -1
     for e, parts in elem_to_parts.items():
-        kin = {i: pkin(i) for i in parts}
-        lead = sorted(parts, key=lambda i: kin[i][1], reverse=True)[0]
-        px = np.sum([kin[i][0]*np.cos(cphi[i]) for i in parts])
-        py = np.sum([kin[i][0]*np.sin(cphi[i]) for i in parts])
-        pz = np.sum([kin[i][0]*np.sinh(ceta[i]) if abs(ceta[i]) < 10 else 0.0 for i in parts])
-        en = np.sum([kin[i][1] for i in parts])
+        # each contribution = weight * particle kinematics (weight=1 except fragments);
+        # fragments keep the PARTICLE direction so they re-sum to the particle in jets
+        kin = {}
+        for i, w in parts:
+            p, en_ = pkin(i)
+            kin[i] = (w * p, w * en_)
+        lead = sorted(parts, key=lambda iw: kin[iw[0]][1], reverse=True)[0][0]
+        px = np.sum([kin[i][0]*np.cos(cphi[i]) for i, _ in parts])
+        py = np.sum([kin[i][0]*np.sin(cphi[i]) for i, _ in parts])
+        pz = np.sum([kin[i][0]*np.sinh(ceta[i]) if abs(ceta[i]) < 10 else 0.0 for i, _ in parts])
+        en = np.sum([kin[i][1] for i, _ in parts])
         pt = math.hypot(px, py); phi = math.atan2(py, px)
         eta = np.arcsinh(pz/pt) if pt > 0 else 0.0
         ytarget["pid"][e] = abs(int(pid[lead])); ytarget["charge"][e] = chg[lead]
@@ -274,9 +303,9 @@ def process_event(E, iev, ts):
             "targetjet": targetjet, "candjet": candjet, "pythia": pythia}
 
 
-def process(infile, outfile, num_events=-1, calo="clue3d"):
+def process(infile, outfile, num_events=-1, calo="clue3d", neutral_split="argmax", frag_min_share=0.05):
     ts = CALO[calo]
-    print(f"opening {infile}  (calo={calo} -> {ts})")
+    print(f"opening {infile}  (calo={calo} -> {ts}, neutral_split={neutral_split})")
     try:
         tree = uproot.open(infile)["Events"]
     except uproot.KeyInFileError:
@@ -289,7 +318,7 @@ def process(infile, outfile, num_events=-1, calo="clue3d"):
         return
     out = []
     for iev in range(n):
-        out.append(process_event(E, iev, ts))
+        out.append(process_event(E, iev, ts, neutral_split, frag_min_share))
         if (iev+1) % 50 == 0: print(f"  {iev+1}/{n}")
     with open(outfile, "wb") as f:
         pickle.dump(out, f, protocol=pickle.HIGHEST_PROTOCOL)
@@ -306,8 +335,14 @@ def main():
     ap.add_argument("--num-events", type=int, default=-1)
     ap.add_argument("--calo", choices=list(CALO), default="clue3d",
                     help="calo collection: clue3d (pre-linking) or links (CMSSW-merged)")
+    ap.add_argument("--neutral-split", choices=["argmax", "fragment"], default="argmax",
+                    help="neutral->trackster target: argmax (one per particle, run3-style) or "
+                         "fragment (moanwar-style proportional split, truth-energy conserving, no gen filter)")
+    ap.add_argument("--frag-min-share", type=float, default=0.05,
+                    help="fragment mode: drop tracksters below this share of the particle's total "
+                         "shared energy (weight redistributed to the kept ones)")
     a = ap.parse_args()
-    process(a.input, a.output, a.num_events, a.calo)
+    process(a.input, a.output, a.num_events, a.calo, a.neutral_split, a.frag_min_share)
 
 
 if __name__ == "__main__":
