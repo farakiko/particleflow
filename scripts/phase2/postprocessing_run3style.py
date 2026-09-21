@@ -73,6 +73,8 @@ def branches_for(ts):
         f"{ts}_raw_energy", f"{ts}_raw_em_energy", f"{ts}_n{ts}vertices",
         f"{ts}_time", f"{ts}_timeError", f"{ts}_EV1", f"{ts}_EV2", f"{ts}_EV3",
         f"{s2r}_n{s2r}Links", f"{s2r}Links_index", f"{s2r}Links_sharedEnergy",
+        f"{s2r}Links_score",
+        f"Reco{ts}2SimCPByHits_nReco{ts}2SimCPByHitsLinks", f"Reco{ts}2SimCPByHitsLinks_score",
         "HGCalGenPart_pdgId", "HGCalGenPart_status", "HGCalGenPart_pt",
         "HGCalGenPart_eta", "HGCalGenPart_phi", "HGCalGenPart_energy",
         "TICLCandidates_pdgID", "TICLCandidates_charge", "TICLCandidates_pt",
@@ -93,7 +95,8 @@ def cluster_jets(pt, eta, phi, energy):
             if jets else np.zeros((0, 4), np.float32))
 
 
-def process_event(E, iev, ts, neutral_split="argmax", frag_min_share=0.05):
+def process_event(E, iev, ts, neutral_split="argmax", frag_select="score",
+                  frag_min_share=0.05, frag_r_max=0.6, frag_s_max=0.9):
     s2r = f"SimCP2{ts}ByHits"
     g = lambda b: ak.to_numpy(E[b][iev])
 
@@ -188,6 +191,14 @@ def process_event(E, iev, ts, neutral_split="argmax", frag_min_share=0.05):
 
     cnt = g(f"{s2r}_n{s2r}Links"); off = np.concatenate([[0], np.cumsum(cnt)]).astype(int)
     aidx = g(f"{s2r}Links_index"); ashe = g(f"{s2r}Links_sharedEnergy")
+    asco = g(f"{s2r}Links_score")          # simToReco score, parallel to ashe (0=perfect, 1=no match)
+    r2s = f"Reco{ts}2SimCPByHits"
+    rcnt = g(f"{r2s}_n{r2s}Links"); rsco = g(f"{r2s}Links_score")
+    roff = np.concatenate([[0], np.cumsum(rcnt)]).astype(int)
+    # per-trackster leading recoToSim score (moanwar takes entry [0]; 1.0 = unassociated)
+    ts_rscore = np.ones(n_ts, np.float32)
+    has_r = rcnt > 0
+    ts_rscore[has_r] = rsco[roff[:-1][has_r]]
     # electron -> GSF-track association (ragged), the same branch his script uses
     gcnt = g("SimTICLCandidates_nGsfTrackIdxs"); goff = np.concatenate([[0], np.cumsum(gcnt)]).astype(int)
     gflat = g("SimTICLCandidatesGsfTrackIdxs_trackIndex")
@@ -201,22 +212,30 @@ def process_event(E, iev, ts, neutral_split="argmax", frag_min_share=0.05):
         return None
 
     def trackster_fragments(i):
-        """All associated tracksters of particle i with their shared-energy weights
-        (moanwar-style fragmentation, but NO gen filter / score cuts): weights are
-        renormalized over the kept fragments so the FULL truth energy is conserved.
-        Fragments below frag_min_share of the particle's total shared energy are
-        dropped (junk associations, cf. docs 9C) and their weight redistributed."""
-        ii = aidx[off[i]:off[i+1]]; ss = ashe[off[i]:off[i+1]]
+        """All associated tracksters of particle i with shared-energy weights
+        (moanwar-style fragmentation, NO gen filter). Fragment selection:
+          score (default, synchronized with moanwar): keep a trackster iff
+            r_score<=frag_r_max AND s_score<=frag_s_max (his reject: r>0.6 or s>0.9);
+          share: keep tracksters carrying >=frag_min_share of the total shared energy.
+        In BOTH modes the weights are renormalized over the KEPT fragments — the
+        redistribution happens AFTER the filtering, so the particle's full truth
+        energy is conserved as long as >=1 fragment survives (else it is dropped)."""
+        ii = aidx[off[i]:off[i+1]]; ss = ashe[off[i]:off[i+1]]; sc = asco[off[i]:off[i+1]]
         ok = (ss > 0) & (ii >= 0) & (ii < n_ts)
         if not ok.any():
             return []
-        ii, ss = ii[ok], ss[ok]
+        ii, ss, sc = ii[ok], ss[ok], sc[ok]
+        if frag_select == "score":
+            keep = (sc <= frag_s_max) & (ts_rscore[ii.astype(int)] <= frag_r_max)
+            if not keep.any():
+                return []
+        else:
+            w0 = ss / ss.sum()
+            keep = w0 >= frag_min_share
+            if not keep.any():
+                keep = w0 == w0.max()
+        ii, ss = ii[keep], ss[keep]
         w = ss / ss.sum()
-        keep = w >= frag_min_share
-        if not keep.any():
-            keep = w == w.max()
-        ii, w = ii[keep], w[keep]
-        w = w / w.sum()
         return [(n_trk + int(t), float(x)) for t, x in zip(ii, w)]
 
     def neutral_elems(i):
@@ -303,9 +322,11 @@ def process_event(E, iev, ts, neutral_split="argmax", frag_min_share=0.05):
             "targetjet": targetjet, "candjet": candjet, "pythia": pythia}
 
 
-def process(infile, outfile, num_events=-1, calo="clue3d", neutral_split="argmax", frag_min_share=0.05):
+def process(infile, outfile, num_events=-1, calo="clue3d", neutral_split="argmax",
+            frag_select="score", frag_min_share=0.05, frag_r_max=0.6, frag_s_max=0.9):
     ts = CALO[calo]
-    print(f"opening {infile}  (calo={calo} -> {ts}, neutral_split={neutral_split})")
+    print(f"opening {infile}  (calo={calo} -> {ts}, neutral_split={neutral_split}"
+          + (f", frag_select={frag_select}" if neutral_split == "fragment" else "") + ")")
     try:
         tree = uproot.open(infile)["Events"]
     except uproot.KeyInFileError:
@@ -318,7 +339,7 @@ def process(infile, outfile, num_events=-1, calo="clue3d", neutral_split="argmax
         return
     out = []
     for iev in range(n):
-        out.append(process_event(E, iev, ts, neutral_split, frag_min_share))
+        out.append(process_event(E, iev, ts, neutral_split, frag_select, frag_min_share, frag_r_max, frag_s_max))
         if (iev+1) % 50 == 0: print(f"  {iev+1}/{n}")
     with open(outfile, "wb") as f:
         pickle.dump(out, f, protocol=pickle.HIGHEST_PROTOCOL)
@@ -337,12 +358,19 @@ def main():
                     help="calo collection: clue3d (pre-linking) or links (CMSSW-merged)")
     ap.add_argument("--neutral-split", choices=["argmax", "fragment"], default="argmax",
                     help="neutral->trackster target: argmax (one per particle, run3-style) or "
-                         "fragment (moanwar-style proportional split, truth-energy conserving, no gen filter)")
+                         "fragment (moanwar-style proportional split, no gen filter; truth energy "
+                         "renormalized over the fragments that pass the selection)")
+    ap.add_argument("--frag-select", choices=["score", "share"], default="score",
+                    help="fragment selection: score (moanwar-synchronized r/s cuts) or share (energy floor)")
     ap.add_argument("--frag-min-share", type=float, default=0.05,
-                    help="fragment mode: drop tracksters below this share of the particle's total "
-                         "shared energy (weight redistributed to the kept ones)")
+                    help="share mode: drop tracksters below this fraction of the total shared energy")
+    ap.add_argument("--frag-r-max", type=float, default=0.6,
+                    help="score mode: keep fragment iff trackster recoToSim score <= this (moanwar 0.6)")
+    ap.add_argument("--frag-s-max", type=float, default=0.9,
+                    help="score mode: keep fragment iff simToReco score <= this (moanwar 0.9)")
     a = ap.parse_args()
-    process(a.input, a.output, a.num_events, a.calo, a.neutral_split, a.frag_min_share)
+    process(a.input, a.output, a.num_events, a.calo, a.neutral_split,
+            a.frag_select, a.frag_min_share, a.frag_r_max, a.frag_s_max)
 
 
 if __name__ == "__main__":
