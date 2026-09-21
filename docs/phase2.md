@@ -360,6 +360,34 @@ interactive pod), qcd/zll tfds pending storage math, v1-target builders once con
 
 ---
 
+## 13. Neutral fragmentation experiment (2026-09-21, VERIFIED on 30k ttbar)
+
+Moanwar's chat insight tested on our own terms: `--neutral-split fragment` in
+`postprocessing_run3style.py` splits a neutral's **truth** energy across its associated
+tracksters ∝ sharedEnergy (share ≥5%, weights **renormalized → energy exactly conserved**;
+**no gen filter**, unlike his). Fragments keep the particle direction → target jets
+identical to argmax by construction (verified; the differences are per-element).
+
+| per-trackster | argmax | fragment |
+|---|---|---|
+| null fraction | 50.1% | **38.7%** |
+| nhad labels | 10.2% | 15.7% (+54%) |
+| nhad median regression correction | ×3.1 | **×2.2** |
+| nhad >5× correction tail | 26.5% | **17.0%** |
+| photon | — | ~unchanged (slight 2nd-fragment tail 3.1→5.3%) |
+
+Interpretation: fragmentation removes the **shower-topology variance** from the nhad
+regression target and supervises every energy-carrying trackster (attacks both nhad→null
+0.30 and nhad→γ 0.40 confusions); the irreducible capture/response spread (IQR ~0.95)
+remains, as expected. Tools: `frag_learnability.py`, overlay via
+`compare_targets_overlay.py --label1/--label2`; page `plots/phase2/frag_comparison/frag_report.html`.
+**Adopting it for training requires re-postprocessing the EOS production + tfds rebuild**
+(condor ~hours + ~5h build) — staged after the muon-fix retrain on the existing (argmax) tfds.
+Also relevant vs his scheme: the two are now separable — fragmentation (kept) vs gen filter
+(rejected) vs score cuts (replaced by share floor + renormalization).
+
+---
+
 ## 12. v1 vs v2 target on the colleague's validation metrics (2026-09-16)
 
 Ran moanwar's `mlpf_ticl_analysis_plots.py` **verbatim** via the new driver
