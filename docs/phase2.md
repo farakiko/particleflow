@@ -410,6 +410,30 @@ To revisit against §5/§9C where we chose argmax+merge and rejected score cuts 
 - `/shared`: 225G free at start; `/scratch` = node-local NVMe (~640G free), used for caches
   only (ephemeral). `/shared/mlpf` is a pre-existing unrelated project → phase2 workspace
   moved to **`/shared/mlpf-phase2/`**.
+- **✅ FIRST BIG TRAINING COMPLETE (2026-09-16 18:24) + EVALUATED (2026-09-21)**:
+  100k steps (6.4M examples ≈ 0.42 epoch of 15.3M), 7.1 h on one MIG slice, exit 0.
+  Valid loss 2.107 → **1.7014**, a new best at every 10k-step validation (never stale →
+  longer run warranted). Test stage (ckpt-90000, 5k events/sample, `--make-plots`):
+  **jet response vs truth: ttbar MLPF 0.95±0.27 vs target ceiling 0.97±0.18; MLPF vs
+  target 1.00±0.17** — the model reproduces its target's jet scale at unity. Plots:
+  experiment dir `plots_test/` (mirrored to eos) + `plots/phase2/eval_v1model/eval_report.html`.
+  Next levers: longer training (resume `--load`), focal-α class weights, `backbone_mode: split`,
+  and a per-class eff/fake/confusion eval (make_plots suite is jet-level only).
+- **⚠→✅ MUON LABEL BUG FOUND + FIXED (2026-09-21, VERIFIED by pkl→tfds→parquet bisect)**:
+  `PFDataset.TFDSDataSource` applied the **Run-3** `cms_*` label-harmonization rules to
+  `cms_pf_phase2_*` too; with phase2 indices (5=µ vs run3 5=γ), "track with label 5 → chad"
+  relabeled **every muon target to a charged hadron** during the whole 20260916 training and
+  in eval. Now guarded to non-phase2 datasets. Corrected-label eval of the (still bug-trained)
+  model: µ targets 3,048; **eff(any) 0.99, µ→chad 0.99, pT response 0.998±0.037** — muons are
+  found and regressed perfectly, only the label head needs a **retrain**.
+- **Corrected per-class eval (ckpt-90k, 15k test events, fixed labels + η-cut plots)**:
+  chad eff **0.96** / response **0.994±0.06** / diag 0.96 (§8: 0.87); γ eff 0.87 / diag 0.86 /
+  response 1.26 (over-scale persists); **nhad diag 0.29** (nhad→γ 0.40, was 0.47), any-pid eff
+  0.70; **e diag 0.20** (e→chad 0.51, was 0.71), any-pid 0.73. Jet suite with the new
+  1.5<|η|<3.0 acceptance cut: **spectra target/MLPF/truth now overlap; MLPF response
+  0.96±0.25 vs target 0.97±0.17**. Scripts: `eval_from_preds.py`; page:
+  `plots/phase2/eval_report_corrected.html`. **Next run: retrain with fixed labels + focal-α**
+  (µ ID free win; e/nhad the remaining classification work).
 - **✅ SMOKE TRAINING PASSED (2026-09-15 11:01)**: full ttbar tfds built clean (10/10 configs,
   **70 GB** final, 4.6M events) → `mlpf` pipeline, 1× MIG 1g.12gb, 300 steps in ~2 min:
   **valid loss 6.36 → 3.43 → 3.09** (halved, still descending), plots + checkpoints at
