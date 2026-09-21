@@ -83,7 +83,11 @@ class TFDSDataSource:
                         pad_width = ((0, num_to_pad), (0, 0))  # Pad only the first axis
                         ret[key_to_pad] = np.pad(array_to_pad, pad_width, mode="constant", constant_values=0)
 
-        if ds_name.startswith("cms_"):
+        # Run-3 CMS label harmonization. Must NOT run on cms_pf_phase2_*: the class
+        # indices differ (phase2 cls 5 = muon, run3 cls 5 = photon), so e.g. the
+        # "track with label 5 -> charged hadron" rule would relabel every muon.
+        # Phase-2 anchoring is already handled in the postprocessing target builder.
+        if ds_name.startswith("cms_") and not ds_name.startswith("cms_pf_phase2"):
             # track, target label neutral hadron -> reconstruct as charged hadron
             ret["ytarget"][:, 0][(ret["X"][:, 0] == 1) & (ret["ytarget"][:, 0] == 2)] = 1
 
