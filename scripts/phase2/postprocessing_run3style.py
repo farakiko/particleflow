@@ -96,7 +96,7 @@ def cluster_jets(pt, eta, phi, energy):
 
 
 def process_event(E, iev, ts, neutral_split="argmax", frag_select="score",
-                  frag_min_share=0.05, frag_r_max=0.6, frag_s_max=0.9):
+                  frag_min_share=0.05, frag_r_max=0.6, frag_s_max=0.9, acceptance="simcand"):
     s2r = f"SimCP2{ts}ByHits"
     g = lambda b: ak.to_numpy(E[b][iev])
 
@@ -245,33 +245,54 @@ def process_event(E, iev, ts, neutral_split="argmax", frag_select="score",
         e = best_trackster(i)
         return [(e, 1.0)] if e is not None else []
 
+    def track_in_hgcal(ti):
+        # detector-landing acceptance for track anchors: the track EXTRAPOLATED to the
+        # HGCAL surface must land in the endcap window (moanwar's criterion, minus gen match)
+        return ENDCAP_LO <= abs(float(tke[ti])) <= ENDCAP_HI
+
+    def in_acceptance(i, ti=None):
+        """simcand mode: truth direction in 1.5<|eta|<3 (rigid, momentum-level).
+        anchor mode: decided by where the ANCHOR lands — tracks via their HGCAL-surface
+        extrapolation; trackster-anchored particles are in by construction (tracksters
+        only exist in HGCAL), so no extra test there."""
+        if acceptance == "anchor":
+            if ti is not None:
+                return track_in_hgcal(ti)
+            return True  # trackster-anchored: element existence IS the acceptance
+        return ENDCAP_LO <= abs(float(ceta[i])) <= ENDCAP_HI
+
     elem_to_parts = defaultdict(list)   # elem -> [(particle index, energy weight)]
     for i in range(len(pid)):
-        # HGCAL endcap only: a truth particle becomes a target only if it's in 1.5<|eta|<3
-        # (drops barrel charged tracks + the forward |eta|>3 tail; keeps target == gen acceptance)
-        if not (ENDCAP_LO <= abs(float(ceta[i])) <= ENDCAP_HI):
-            continue
         apid = abs(int(pid[i]))
         if apid == 11:
             # electron: prefer its GSF track (as his script does), then general track, then trackster
             gids = gflat[goff[i]:goff[i+1]]
             gid = next((int(x) for x in gids if 0 <= int(x) < n_gsf), None)
-            if gid is not None:
-                elem_to_parts[gbase + gid].append((i, 1.0)); continue
             ti = int(ctrk[i])
-            if ti != SENTINEL and 0 <= ti < n_trk:
-                elem_to_parts[ti].append((i, 1.0)); continue
-            for e, w in neutral_elems(i):
-                elem_to_parts[e].append((i, w))
+            has_trk = ti != SENTINEL and 0 <= ti < n_trk
+            if gid is not None:
+                # GSF has no stored HGCAL extrapolation -> use the general track's when
+                # available; a GSF-only electron counts as landed (HGCAL-seeded object)
+                if in_acceptance(i, ti if has_trk else None):
+                    elem_to_parts[gbase + gid].append((i, 1.0))
+                continue
+            if has_trk:
+                if in_acceptance(i, ti):
+                    elem_to_parts[ti].append((i, 1.0))
+                continue
+            if in_acceptance(i):
+                for e, w in neutral_elems(i):
+                    elem_to_parts[e].append((i, w))
             continue
         charged = (apid in CHARGED_PIDS) and (int(ctrk[i]) != SENTINEL)
         if charged:
             ti = int(ctrk[i])
-            if 0 <= ti < n_trk:
+            if 0 <= ti < n_trk and in_acceptance(i, ti):
                 elem_to_parts[ti].append((i, 1.0))
         else:
-            for e, w in neutral_elems(i):
-                elem_to_parts[e].append((i, w))
+            if in_acceptance(i):
+                for e, w in neutral_elems(i):
+                    elem_to_parts[e].append((i, w))
 
     ytarget = np.recarray((n_el,), dtype=[(n, np.float32) for n in particle_feature_order])
     ytarget.fill(0.0); ytarget["jet_idx"] = -1
@@ -323,10 +344,12 @@ def process_event(E, iev, ts, neutral_split="argmax", frag_select="score",
 
 
 def process(infile, outfile, num_events=-1, calo="clue3d", neutral_split="argmax",
-            frag_select="score", frag_min_share=0.05, frag_r_max=0.6, frag_s_max=0.9):
+            frag_select="score", frag_min_share=0.05, frag_r_max=0.6, frag_s_max=0.9,
+            acceptance="simcand"):
     ts = CALO[calo]
     print(f"opening {infile}  (calo={calo} -> {ts}, neutral_split={neutral_split}"
-          + (f", frag_select={frag_select}" if neutral_split == "fragment" else "") + ")")
+          + (f", frag_select={frag_select}" if neutral_split == "fragment" else "")
+          + f", acceptance={acceptance})")
     try:
         tree = uproot.open(infile)["Events"]
     except uproot.KeyInFileError:
@@ -339,7 +362,7 @@ def process(infile, outfile, num_events=-1, calo="clue3d", neutral_split="argmax
         return
     out = []
     for iev in range(n):
-        out.append(process_event(E, iev, ts, neutral_split, frag_select, frag_min_share, frag_r_max, frag_s_max))
+        out.append(process_event(E, iev, ts, neutral_split, frag_select, frag_min_share, frag_r_max, frag_s_max, acceptance))
         if (iev+1) % 50 == 0: print(f"  {iev+1}/{n}")
     with open(outfile, "wb") as f:
         pickle.dump(out, f, protocol=pickle.HIGHEST_PROTOCOL)
@@ -368,9 +391,12 @@ def main():
                     help="score mode: keep fragment iff trackster recoToSim score <= this (moanwar 0.6)")
     ap.add_argument("--frag-s-max", type=float, default=0.9,
                     help="score mode: keep fragment iff simToReco score <= this (moanwar 0.9)")
+    ap.add_argument("--acceptance", choices=["simcand", "anchor"], default="simcand",
+                    help="endcap acceptance: simcand (truth direction in 1.5<|eta|<3) or anchor "
+                         "(detector-landing: track HGCAL extrapolation / trackster existence)")
     a = ap.parse_args()
     process(a.input, a.output, a.num_events, a.calo, a.neutral_split,
-            a.frag_select, a.frag_min_share, a.frag_r_max, a.frag_s_max)
+            a.frag_select, a.frag_min_share, a.frag_r_max, a.frag_s_max, a.acceptance)
 
 
 if __name__ == "__main__":
