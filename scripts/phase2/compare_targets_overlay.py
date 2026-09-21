@@ -45,6 +45,12 @@ def load_version(pattern, max_files):
     return arrs_awk, arrs_flat, genmet, genjet_cmssw
 
 
+# moanwar's COLLECTOR encoding (the validation-script worker names are stale for 3/4):
+# collect_track->1, collect_em->2, collect_hadronic->3, collect_gsf_track->4.
+# NB our own run3style pkls use a different encoding (1 track, 2 GSF, 4 trackster).
+ELEM_NAMES = {1: "Track", 2: "EM trackster", 3: "Hadronic trackster", 4: "GSF track"}
+
+
 def _sv(fig, outdir, name):
     try:
         fig.tight_layout()
@@ -73,9 +79,9 @@ def main():
     os.makedirs(outdir, exist_ok=True)
 
     print("loading v1...")
-    awk1, flat1, _, genjet1 = load_version(a.v1_glob, a.max_files)
+    awk1, flat1, genmet1, genjet1 = load_version(a.v1_glob, a.max_files)
     print("loading v2...")
-    awk2, flat2, _, genjet2 = load_version(a.v2_glob, a.max_files)
+    awk2, flat2, genmet2, genjet2 = load_version(a.v2_glob, a.max_files)
 
     # gen reference for particle-level panels: endcap window matched to the targets
     # (response panels keep the FULL cmssw genjet list; matching restricts them there)
@@ -279,8 +285,10 @@ def main():
     M.cms_label(ax)
     _sv(fig, outdir, "overlay_multiplicity.png")
 
-    # ---- 6. element truth-matched fraction vs E (tracks, hadronic tracksters)
-    for typ, tname in [(1, "tracks"), (4, "hadronic tracksters")]:
+    # ---- 6. element truth-matched fraction vs E — every element type present
+    all_typs = sorted(set(np.unique(flat1["Xelem"]["typ"]).astype(int)) | set(np.unique(flat2["Xelem"]["typ"]).astype(int)))
+    for typ in [t for t in all_typs if t != 0]:
+        tname = ELEM_NAMES.get(typ, f"type {typ}")
         fig, ax = plt.subplots(figsize=(10, 7))
         bins = np.logspace(-1, 3, 40)
         for k, fl in [("v1", flat1), ("v2", flat2)]:
@@ -300,6 +308,98 @@ def main():
         ax.legend(fontsize=12)
         M.cms_label(ax)
         _sv(fig, outdir, f"overlay_elem_matched_type{typ}.png")
+
+    # ---- 7. element pT-ratio per type (his ticl_elem_ptratio, both curves)
+    for typ in [t for t in all_typs if t != 0]:
+        tname = ELEM_NAMES.get(typ, f"type {typ}")
+        fig, ax = plt.subplots(figsize=(10, 7))
+        b = np.logspace(-2, 2, 90)
+        drew = False
+        for k, fl in [("v1", flat1), ("v2", flat2)]:
+            msk = (fl["Xelem"]["typ"] == typ) & (fl["ytarget"]["pid"] != 0) & (fl["Xelem"]["pt"] > 0)
+            if msk.sum() < 50:
+                continue
+            r = fl["ytarget"]["pt"][msk] / fl["Xelem"]["pt"][msk]
+            ax.hist(r, bins=b, histtype="step", lw=2, color=C[k], density=True,
+                    label=f"{LBL[k]} (n={int(msk.sum())}, med={np.median(r):.2f})")
+            drew = True
+        if not drew:
+            plt.close(fig)
+            continue
+        ax.axvline(1, color="gray", ls=":", lw=1)
+        ax.set_xscale("log")
+        ax.set_xlabel(f"{tname}: target $p_T$ / element $p_T$")
+        ax.set_ylabel("density")
+        ax.legend(fontsize=12)
+        M.cms_label(ax)
+        _sv(fig, outdir, f"overlay_elem_ptratio_type{typ}.png")
+
+    # ---- 8. MET: distributions + response (his plot_met, both targets overlaid)
+    met = {
+        "gen": genmet2,
+        "v1": M._compute_met(awk1["ytarget"]["pt"], awk1["ytarget"]["phi"]),
+        "v2": M._compute_met(awk2["ytarget"]["pt"], awk2["ytarget"]["phi"]),
+    }
+    fig, ax = plt.subplots(figsize=(10, 7))
+    b = np.logspace(-1, 3, 80)
+    ax.hist(met["gen"], bins=b, histtype="step", lw=2, color=C["gen"], ls="--",
+            label=f"genMET ($\\nu$ sum) (med={np.median(met['gen']):.1f})")
+    for k in ["v1", "v2"]:
+        ax.hist(met[k], bins=b, histtype="step", lw=2, color=C[k],
+                label=f"{LBL[k]} target MET (med={np.median(met[k]):.1f})")
+    ax.set_xscale("log")
+    ax.set_yscale("log")
+    ax.set_xlabel("MET (GeV)")
+    ax.set_ylabel("events / bin")
+    ax.legend(fontsize=12)
+    M.cms_label(ax)
+    _sv(fig, outdir, "overlay_met.png")
+
+    fig, ax = plt.subplots(figsize=(10, 7))
+    b = np.linspace(0, 4, 101)
+    okm = met["gen"] > 5
+    for k in ["v1", "v2"]:
+        r = met[k][okm] / met["gen"][okm]
+        ax.hist(r, bins=b, histtype="step", lw=2, color=C[k], density=True,
+                label=f"{LBL[k]}  (med={np.median(r):.2f})")
+    ax.axvline(1, color="gray", ls=":", lw=1)
+    ax.set_xlabel("target MET / genMET   (genMET > 5 GeV)")
+    ax.set_ylabel("density")
+    ax.legend(fontsize=13)
+    M.cms_label(ax)
+    _sv(fig, outdir, "overlay_met_ratio.png")
+
+    # ---- 9. overall particle pT (all PIDs) + his log-log jet response
+    fig, ax = plt.subplots(figsize=(10, 7))
+    b = np.logspace(-2, 3, 90)
+    ax.hist(flat2["pythia"]["pt"][gec_flat], bins=b, histtype="step", lw=2, color=C["gen"],
+            ls="--", label=f"pythia {gen_note} (n={int(gec_flat.sum())})")
+    for k, fl in [("v1", flat1), ("v2", flat2)]:
+        msk = fl["ytarget"]["pid"] != 0
+        ax.hist(fl["ytarget"]["pt"][msk], bins=b, histtype="step", lw=2, color=C[k],
+                label=f"{LBL[k]} (n={int(msk.sum())})")
+    ax.set_xscale("log")
+    ax.set_yscale("log")
+    ax.set_xlabel("particle $p_T$ (GeV), all classes")
+    ax.set_ylabel("particles / bin")
+    ax.legend(fontsize=12)
+    M.cms_label(ax)
+    _sv(fig, outdir, "overlay_overall_pt.png")
+
+    fig, ax = plt.subplots(figsize=(10, 7))
+    b = np.logspace(-1, 1, 300)
+    for k in ["v1", "v2"]:
+        rp, tp = matches[k]
+        ax.hist(tp / rp, bins=b, histtype="step", lw=1.5, color=C[k], label=LBL[k])
+    ax.axvline(1.0, color="black", ls="--", lw=0.5)
+    ax.set_xscale("log")
+    ax.set_yscale("log")
+    ax.set_xlabel("jet $p_T$ / genjet $p_T$")
+    ax.set_ylabel("counts")
+    ax.legend(fontsize=12)
+    ax.grid(alpha=0.3, ls="--")
+    M.cms_label(ax)
+    _sv(fig, outdir, "overlay_jet_response_loglog.png")
 
     print(f"done -> {outdir}")
 
