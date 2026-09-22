@@ -360,6 +360,38 @@ interactive pod), qcd/zll tfds pending storage math, v1-target builders once con
 
 ---
 
+## 14. v3 target definition — PRECISE semantics (2026-09-22, code-verified; THE production)
+
+`postprocessing_ticl_acceptance.py` = moanwar's script; sole changes: gen matching → acceptance
+(one function) + uncut reference storage (stable_gen block). Condor: `PP_MODE=acceptance` → `pkl_v3`.
+
+**Acceptance (which simcands become labels):** every SimTICLCandidate needs **pT ≥ 1 GeV**.
+Acceptance position = the candidate's own truth direction; for CHARGED candidates, replaced by a
+linked track's HGCAL-surface landing point iff that landing has |η| > 1.5. Accept iff
+**|position| ≥ 1.5**, no upper bound. ⇒ neutrals: truth direction ≥ 1.5 (tracksters irrelevant
+to acceptance); charged: direction ≥ 1.5 **OR** track lands ≥ 1.5 (union — the track can only
+rescue into, never veto out). Rationale: labels only where the event record (tracker+HGCAL) is
+complete; barrel tracks stay null-labeled inputs (scope). pT floor = his convention; ablate later.
+
+**Anchoring (where each accepted candidate's truth energy goes):**
+- charged hadron w/ 1 track → full truth E on the track; its hadronic tracksters written as
+  **zero-energy markers** (calo fragments of tracked hadrons deliberately carry no target E);
+  w/ >1 track → split across tracks; **w/ no track → fragments across score-passing hadronic
+  tracksters like a neutral**; none passing → dropped.
+- neutral → proportional truth-E split over tracksters passing **r ≤ 0.6 AND s ≤ 0.9**,
+  weights renormalized over survivors (⚠ his weights ∝ trackster RAW energy, not assoc
+  sharedEnergy — flagged to moanwar); all fail → dropped.
+- electron → GSF track → general track → EM-trackster fragments; none → dropped.
+- muon → track or **dropped** (no trackster fallback).
+
+**References stored UNCUT:** pythia = all visible status-1 gens (no η/pT; ν excluded);
+genjet = anti-kT(0.4, pT>3) of that same list; genMET = ν vector sum. Verified identical to the
+run3style references (20.0 jets/ev, 223.0 particles/ev). ALL gen-side acceptance/fiducial cuts
+are evaluation-time choices (particle-level: window the particles; jets: cluster full, cut the
+jet axis; scale/resolution quotes: cone-contained core 1.9<|η|<2.6).
+
+---
+
 ## 13. Neutral fragmentation experiment (2026-09-21, VERIFIED on 30k ttbar)
 
 Moanwar's chat insight tested on our own terms: `--neutral-split fragment` in
