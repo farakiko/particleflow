@@ -264,10 +264,9 @@ def build_gen_to_simcand_map(ev):
     sc_in_acceptance = (np.abs(sc_match_eta) >= 1.5) & (simcan_pt >= SIMCAND_PT_MIN)
     matched_simcand_indices = set(int(j) for j in np.where(sc_in_acceptance)[0])
 
-    matched_gen_indices = set(
-        int(g) for g in range(len(gen_eta))
-        if abs(float(gen_eta[g])) >= 1.5 and float(gen_pt[g]) >= GEN_PT_MIN
-    )
+    # gen side: keep ALL gens -> stored references (genjet, pythia) are UNCUT;
+    # every gen-side acceptance/fiducial choice is applied at evaluation time instead.
+    matched_gen_indices = set(range(len(gen_eta)))
 
     return matched_simcand_indices, matched_gen_indices
 
@@ -1404,16 +1403,9 @@ def process_file_no_progress(input_file, num_events=-1, start_event=0,
                 pt  = g.nodes[node]["pt"]
 
                 if abs(pid) in _NEUTRINO_PIDS:
-                    if abs(eta) >= 1.5:
-                        stable_gen.append([pid, pt, eta,
-                                           g.nodes[node]["phi"],
-                                           g.nodes[node]["energy"]])
-                    continue
+                    continue   # stored pythia = visible gens only (genMET keeps neutrinos separately)
 
-                if node[1] not in matched_gen_indices:
-                    continue
-                if pt < GEN_PT_MIN:
-                    continue
+                # UNCUT storage: no eta window, no pt floor (eval applies acceptance)
                 stable_gen.append([pid, pt, eta,
                                    g.nodes[node]["phi"],
                                    g.nodes[node]["energy"]])
