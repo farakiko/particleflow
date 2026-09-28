@@ -360,6 +360,41 @@ interactive pod), qcd/zll tfds pending storage math, v1-target builders once con
 
 ---
 
+## 15. Model-scaling scan (prepared 2026-09-28)
+
+Question (Farouk): our 2.9M model vs ~3B per-element labels — is MLPF capacity-starved
+(Chinchilla-style counting says a ~100M model would be "optimal")? Counter-considerations:
+per-label information is low (85% of labels ≈ copy-the-track), nhad regression has a measured
+aleatoric floor (IQR ~0.95, §9B), and the 2.9M model already sits at the target ceiling on jets
+(MLPF/target 1.00±0.17). The scan measures OUR task's scaling curve instead of arguing priors.
+
+**Fixed-steps scan (30k steps, batch 64, v3 tfds; lr ∝ 1/width):**
+
+| point | shape (d, L) | params | lr | where |
+|---|---|---|---|---|
+| s1 | 256, 3 | 2.92M | 4e-4 | = the running v3 100k training (read its 30k point) |
+| s2 | 512, 3 | 11.6M | 2.5e-4 | MIG slice, overnight |
+| s3 | 640, 10 | 35.4M | 1.6e-4 | MIG slice, ~1.5 d |
+| s4 | 1024, 13 | 109M | 1e-4 | **needs a full H100** (ask NGT; MIG = days + memory-tight) |
+
+Distribution rationale: extra params go to the **backbone** (L 3→13 message-passing rounds —
+the relational bottleneck; d/L ≈ 79, canonical band). Heads/encoders scale as d² automatically
+(6.3M each at d=1024) — not the bottleneck (§8/§9: classification limits are representational/
+informational). NB the architecture hardwires FFN width = d (1× expansion, `mlpf.py:411`);
+kept for a config-only scan; a 4×-expansion variant at fixed 100M (d768 L12 w3072) is a clean
+LATER ablation requiring a small code change.
+
+Decision rule (pre-agreed): flat val loss + rare-class confusions from 2.9→35M ⇒ ceiling
+measured, small model right-sized (deployment-friendly). Still improving at 35M ⇒ 109M run
+justified; if that improves too ⇒ big-teacher/distilled-student becomes the roadmap (and
+PU200+hits is where ≥100M is expected to be load-bearing regardless).
+
+Spec: `pyg-cms-phase2-v3-s{2,3,4}` (validated); launcher:
+`scripts/phase2/cluster/launch_scan_job.sh s2|s3|s4 [full]` (30k steps, val every 5k).
+Sequencing: after the 100k v3 baseline finishes (GPU is busy until then).
+
+---
+
 ## 14. v3 target definition — PRECISE semantics (2026-09-22, code-verified; THE production)
 
 `postprocessing_ticl_acceptance.py` = moanwar's script; sole changes: gen matching → acceptance
