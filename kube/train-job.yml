@@ -1,7 +1,7 @@
 # Full-length MLPF Phase-2 training as a k8s Job (not the interactive smoke pod).
 #   kubectl apply -f kube/train-job.yml
-#   kubectl logs -f job/pf-train-phase2-v1        # or: tail /shared/mlpf-phase2/logs/train_job.log
-#   kubectl delete job pf-train-phase2-v1         # plain delete ONLY — never force
+#   kubectl logs -f job/pf-train-phase2-v3        # or: tail /shared/mlpf-phase2/logs/train_job.log
+#   kubectl delete job pf-train-phase2-v3         # plain delete ONLY — never force
 # Design mirrors kube/train-pod.yml: explicit shared PVC mount, NO vscode-in-shared label,
 # 1x MIG slice on H100-NVL, env + code from /shared (git pull first!).
 # backoffLimit 0: no auto-retry — resume deliberately with --load <checkpoint> instead.
@@ -9,7 +9,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: pf-train-phase2-v1
+  name: pf-train-phase2-v3
 spec:
   backoffLimit: 0
   template:
