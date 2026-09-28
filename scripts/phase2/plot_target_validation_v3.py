@@ -155,6 +155,10 @@ def main():
     ap.add_argument("--max-files", type=int, default=200)
     ap.add_argument("--proc-label", default=r"$\mathrm{t}\bar{\mathrm{t}}$+QCD+DY, 0 PU")
     ap.add_argument("--formats", nargs="+", default=["pdf"])
+    ap.add_argument("--pt-min", type=float, default=1.0,
+                    help="pT floor applied to EVERY curve in the particle-level panels (eta, "
+                         "multiplicity, sumpt ratio, eff/fake) for fairness against the target's "
+                         "built-in simcand pT>=1 floor; the pT spectra panels stay uncut to show the low end")
     ap.add_argument("--gen-window", nargs=2, type=float, default=[1.5, 3.0], metavar=("LO", "HI"),
                     help="fixed |eta| window applied to GEN in denominator plots (sumpt/MET ratios, "
                          "efficiency): the stored gen extends beyond the target acceptance "
@@ -167,6 +171,11 @@ def main():
     P, perev, jets, cand_for_jets, met, nev = load(files)
     glo, ghi = a.gen_window
     genw_note = rf"gen: ${glo}<|\eta|<{ghi}$"
+    ptm = a.pt_min
+    ptm_note = rf"$p_\mathrm{{T}}>{ptm:g}$ GeV"
+    # per-event pT masks, applied to every curve in the particle-level panels
+    PTM = {k: [P[k]["pt"][ie] > ptm for ie in range(nev)] for k in ["gen", "target", "cand"]}
+    FPT = {k: np.concatenate(PTM[k]) for k in PTM}
     # windowed-gen per-event aggregates for the ratio/denominator plots
     for ie in range(nev):
         m = (np.abs(P["gen"]["eta"][ie]) > glo) & (np.abs(P["gen"]["eta"][ie]) < ghi)
@@ -183,7 +192,9 @@ def main():
     fig, ax = plt.subplots(figsize=(11, 9))
     b = np.linspace(-4, 4, 81)
     for k in ["gen", "target", "cand"]:
-        step(ax, F[k]["eta"], b, k, extra=f"  ({len(F[k]['eta'])/nev:.1f}/event)")
+        vals = F[k]["eta"][FPT[k]]
+        step(ax, vals, b, k, extra=f"  ({len(vals)/nev:.1f}/event)")
+    ax.text(0.03, 0.85, ptm_note, transform=ax.transAxes, fontsize=17)
     ax.set_xlabel(r"particle $\eta$")
     ax.set_ylabel("Particles / bin")
     ax.legend(loc="upper center", fontsize=18)
@@ -193,8 +204,9 @@ def main():
     for cl, cname in CLASSES:
         fig, ax = plt.subplots(figsize=(11, 9))
         for k in ["gen", "target", "cand"]:
-            m = F[k]["cls"] == cl
+            m = (F[k]["cls"] == cl) & FPT[k]
             step(ax, F[k]["eta"][m], b, k, extra=f"  (n={int(m.sum())})")
+        ax.text(0.03, 0.85, ptm_note, transform=ax.transAxes, fontsize=17)
         ax.set_xlabel(rf"{cname}: $\eta$")
         ax.set_ylabel("Particles / bin")
         ax.set_yscale("log")
@@ -221,8 +233,9 @@ def main():
     fig, ax = plt.subplots(figsize=(11, 9))
     b = np.linspace(0, 160, 81)
     for k in ["gen", "target", "cand"]:
-        arr = np.array(perev[k]["n"])
+        arr = np.array([int(m.sum()) for m in PTM[k]])
         step(ax, arr, b, k, extra=f"  (mean {arr.mean():.1f})")
+    ax.text(0.7, 0.6, ptm_note, transform=ax.transAxes, fontsize=17)
     ax.set_xlabel("Particles / event")
     ax.set_ylabel("Events / bin")
     ax.set_yscale("log")
@@ -232,12 +245,14 @@ def main():
 
     fig, ax = plt.subplots(figsize=(11, 9))
     b = np.linspace(0, 2, 81)
-    g = np.array(perev["genw"]["sumpt"]); ok = g > 10
+    g = np.array([float(P["gen"]["pt"][ie][P["gen"]["win"][ie] & PTM["gen"][ie]].sum()) for ie in range(nev)])
+    ok = g > 10
     for k in ["target", "cand"]:
-        r = np.array(perev[k]["sumpt"])[ok] / g[ok]
+        sk = np.array([float(P[k]["pt"][ie][PTM[k][ie]].sum()) for ie in range(nev)])
+        r = sk[ok] / g[ok]
         step(ax, r, b, k, extra=rf"  (median {np.median(r):.3f})", density=True)
     ax.axvline(1, color="gray", ls=":", lw=1.5)
-    ax.set_xlabel(rf"$\Sigma p_\mathrm{{T}}$ / $\Sigma p_\mathrm{{T}}^\mathrm{{gen}}$  per event   ({genw_note})")
+    ax.set_xlabel(rf"$\Sigma p_\mathrm{{T}}$ / $\Sigma p_\mathrm{{T}}^\mathrm{{gen}}$  per event   ({genw_note}, {ptm_note})")
     ax.set_ylabel("Density")
     ax.legend(loc="upper left", fontsize=18)
     cms(ax, proc)
@@ -354,8 +369,8 @@ def main():
             num = np.zeros(len(PT_BINS) - 1); den = np.zeros(len(PT_BINS) - 1)
             fnum = np.zeros(len(PT_BINS) - 1); fden = np.zeros(len(PT_BINS) - 1)
             for ie in range(nev):
-                gm = (P["gen"]["cls"][ie] == cl) & P["gen"]["win"][ie]
-                tm = P[key]["cls"][ie] == cl
+                gm = (P["gen"]["cls"][ie] == cl) & P["gen"]["win"][ie] & PTM["gen"][ie]
+                tm = (P[key]["cls"][ie] == cl) & PTM[key][ie]
                 ge, gp_, gpt = P["gen"]["eta"][ie][gm], P["gen"]["phi"][ie][gm], P["gen"]["pt"][ie][gm]
                 te, tp_, tpt = P[key]["eta"][ie][tm], P[key]["phi"][ie][tm], P[key]["pt"][ie][tm]
                 for i in range(len(gpt)):
@@ -392,7 +407,9 @@ def main():
             ax.set_xlabel(rf"{cname}: $p_\mathrm{{T}}$ [GeV]")
             ax.set_ylabel(f"{ylab}  ($\\Delta R<{DR_PART}$, same class)")
             if kind == "efficiency":
-                ax.text(0.03, 0.97, genw_note, transform=ax.transAxes, fontsize=15, va="top")
+                ax.text(0.03, 0.97, f"{genw_note}, all curves {ptm_note}", transform=ax.transAxes, fontsize=15, va="top")
+            else:
+                ax.text(0.03, 0.97, f"all curves {ptm_note}", transform=ax.transAxes, fontsize=15, va="top")
             ax.legend(loc="best", fontsize=18)
             ax.grid(alpha=0.3)
             cms(ax, proc)
