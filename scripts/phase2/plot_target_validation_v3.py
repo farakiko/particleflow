@@ -155,6 +155,10 @@ def main():
     ap.add_argument("--max-files", type=int, default=200)
     ap.add_argument("--proc-label", default=r"$\mathrm{t}\bar{\mathrm{t}}$+QCD+DY, 0 PU")
     ap.add_argument("--formats", nargs="+", default=["pdf"])
+    ap.add_argument("--jet-pt-min", type=float, default=10.0,
+                    help="jet pT floor applied to every curve of the jet panels except the jet-pT "
+                         "spectrum (gen clusters soft 3-20 GeV jets from its floor-free particles "
+                         "that the target cannot form)")
     ap.add_argument("--pt-min", type=float, default=1.0,
                     help="pT floor applied to EVERY curve in the particle-level panels (eta, "
                          "multiplicity, sumpt ratio, eff/fake) for fairness against the target's "
@@ -274,9 +278,11 @@ def main():
 
     fig, ax = plt.subplots(figsize=(11, 9))
     b = np.linspace(-4, 4, 81)
+    jptm = a.jet_pt_min
     for k in ["gen", "target", "cand"]:
-        arr = np.concatenate([j[:, 1] for j in jets[k] if len(j)])
-        step(ax, arr, b, k)
+        arr = np.concatenate([j[j[:, 0] > jptm, 1] for j in jets[k] if len(j)])
+        step(ax, arr, b, k, extra=f"  ({len(arr)/nev:.2f}/event)")
+    ax.text(0.03, 0.85, rf"jet $p_\mathrm{{T}}>{jptm:g}$ GeV", transform=ax.transAxes, fontsize=17)
     ax.set_xlabel(r"jet $\eta$")
     ax.set_ylabel("Jets / bin")
     ax.legend(loc="upper right", fontsize=18)
