@@ -11,6 +11,7 @@ from mlpf.utils import resolve_path, load_spec, set_nested_dict, _resolve_paths_
 class Dataset(Enum):
     CMS = "cms"
     CMS_PHASE2 = "cms_phase2"
+    CMS_PHASE2_V3 = "cms_phase2_v3"
     CLIC = "clic"
     CLD = "cld"
     CLIC_HITS = "clic_hits"
@@ -300,6 +301,7 @@ class ParticleFeatures:
 ELEM_TYPES = {
     Dataset.CMS.value: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
     Dataset.CMS_PHASE2.value: [0, 1, 2],  # 1 - track, 2 - CLUE3D trackster
+    Dataset.CMS_PHASE2_V3.value: [0, 1, 2, 3],  # moanwar encoding: 1 track, 2 EM trackster, 3 hadronic trackster
     Dataset.CLIC.value: [0, 1, 2],  # 1 - track, 2 - cluster
     Dataset.CLD.value: [0, 1, 2],  # 1 - track, 2 - cluster
     Dataset.CLIC_HITS.value: [0, 1, 2],  # 1 - tracker hit, 2 - calorimeter hit
@@ -310,6 +312,7 @@ ELEM_TYPES = {
 ELEM_TYPES_NONZERO = {
     Dataset.CMS.value: [1, 4, 5, 6, 8, 9, 10, 11],
     Dataset.CMS_PHASE2.value: [1, 2],
+    Dataset.CMS_PHASE2_V3.value: [1, 2, 3],
     Dataset.CLIC.value: [1, 2],
     Dataset.CLD.value: [1, 2],
     Dataset.CLIC_HITS.value: [1, 2],
@@ -319,6 +322,7 @@ ELEM_TYPES_NONZERO = {
 CLASS_LABELS = {
     Dataset.CMS.value: [0, 211, 130, 1, 2, 22, 11, 13, 15],  # we never actually predict 15/taus (not there in targets)
     Dataset.CMS_PHASE2.value: [0, 211, 130, 22, 11, 13],
+    Dataset.CMS_PHASE2_V3.value: [0, 211, 130, 22, 11, 13],
     Dataset.CLIC.value: [0, 211, 130, 22, 11, 13],
     Dataset.CLD.value: [0, 211, 130, 22, 11, 13],
     Dataset.CLIC_HITS.value: [0, 211, 130, 22, 11, 13],
@@ -328,6 +332,7 @@ CLASS_LABELS = {
 CLASS_NAMES_LATEX = {
     Dataset.CMS.value: ["none", "Charged Hadron", "Neutral Hadron", "HFEM", "HFHAD", r"$\gamma$", r"$e^\pm$", r"$\mu^\pm$", r"$\tau$"],
     Dataset.CMS_PHASE2.value: ["none", "Charged Hadron", "Neutral Hadron", r"$\gamma$", r"$e^\pm$", r"$\mu^\pm$"],
+    Dataset.CMS_PHASE2_V3.value: ["none", "Charged Hadron", "Neutral Hadron", r"$\gamma$", r"$e^\pm$", r"$\mu^\pm$"],
     Dataset.CLIC.value: ["none", "Charged Hadron", "Neutral Hadron", r"$\gamma$", r"$e^\pm$", r"$\mu^\pm$"],
     Dataset.CLD.value: ["none", "Charged Hadron", "Neutral Hadron", r"$\gamma$", r"$e^\pm$", r"$\mu^\pm$"],
     Dataset.CLIC_HITS.value: ["none", "Charged Hadron", "Neutral Hadron", r"$\gamma$", r"$e^\pm$", r"$\mu^\pm$"],
@@ -336,6 +341,7 @@ CLASS_NAMES_LATEX = {
 CLASS_NAMES = {
     Dataset.CMS.value: ["none", "chhad", "nhad", "HFEM", "HFHAD", "gamma", "ele", "mu", "tau"],
     Dataset.CMS_PHASE2.value: ["none", "chhad", "nhad", "gamma", "ele", "mu"],
+    Dataset.CMS_PHASE2_V3.value: ["none", "chhad", "nhad", "gamma", "ele", "mu"],
     Dataset.CLIC.value: ["none", "chhad", "nhad", "gamma", "ele", "mu"],
     Dataset.CLD.value: ["none", "chhad", "nhad", "gamma", "ele", "mu"],
     Dataset.CLIC_HITS.value: ["none", "chhad", "nhad", "gamma", "ele", "mu"],
@@ -344,6 +350,7 @@ CLASS_NAMES = {
 CLASS_NAMES_CAPITALIZED = {
     Dataset.CMS.value: ["none", "Charged hadron", "Neutral hadron", "HFEM", "HFHAD", "Photon", "Electron", "Muon", "Tau"],
     Dataset.CMS_PHASE2.value: ["none", "Charged hadron", "Neutral hadron", "Photon", "Electron", "Muon"],
+    Dataset.CMS_PHASE2_V3.value: ["none", "Charged hadron", "Neutral hadron", "Photon", "Electron", "Muon"],
     Dataset.CLIC.value: ["none", "Charged hadron", "Neutral hadron", "Photon", "Electron", "Muon"],
     Dataset.CLD.value: ["none", "Charged hadron", "Neutral hadron", "Photon", "Electron", "Muon"],
     Dataset.CLIC_HITS.value: ["none", "Charged hadron", "Neutral hadron", "Photon", "Electron", "Muon"],
@@ -421,6 +428,17 @@ X_FEATURES = {
         "min_dR_track", "near_track_pt", "sum_pt_dR10",
         "n_trk_dR01", "n_trk_dR02", "n_trk_dR03", "n_trk_dR04", "n_trk_dR05",
     ],
+    Dataset.CMS_PHASE2_V3.value: [
+        # verbatim x_features metadata of moanwar's cms_pf_ticl_nopu:2.0.0 tfds
+        "typ_idx", "pt", "eta", "sin_phi", "cos_phi", "energy", "charge",
+        "px", "py", "pz", "em_energy", "bary_z", "nhits",
+        "min_dR_track", "near_track_pt", "shower_depth", "sum_pt_dR10",
+        "n_trk_dR01", "n_trk_dR02", "n_trk_dR03", "n_trk_dR04", "n_trk_dR05",
+        "n_clusters", "ts_time", "ts_time_err",
+        "track_muon_type", "track_muon_dt_hits", "track_muon_csc_hits", "track_gsf_type",
+        "track_pt_err", "track_eta_err", "track_phi_err", "track_lambda_err", "track_qoverp_err",
+        "track_vx", "track_vy", "track_vz",
+    ],
     Dataset.CLIC.value: get_edm4hep_x_features(),
     Dataset.CLD.value: get_edm4hep_x_features(),
     Dataset.CLIC_HITS.value: EDM4HEP.HitFeatures.get_names(),
@@ -435,6 +453,12 @@ JET_CONFIG = {
         "match_dr": 0.1,
     },
     Dataset.CMS_PHASE2.value: {
+        "algo": "antikt_algorithm",
+        "r": 0.4,
+        "ptcut": 3.0,
+        "match_dr": 0.2,
+    },
+    Dataset.CMS_PHASE2_V3.value: {
         "algo": "antikt_algorithm",
         "r": 0.4,
         "ptcut": 3.0,

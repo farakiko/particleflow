@@ -83,11 +83,12 @@ class TFDSDataSource:
                         pad_width = ((0, num_to_pad), (0, 0))  # Pad only the first axis
                         ret[key_to_pad] = np.pad(array_to_pad, pad_width, mode="constant", constant_values=0)
 
-        # Run-3 CMS label harmonization. Must NOT run on cms_pf_phase2_*: the class
-        # indices differ (phase2 cls 5 = muon, run3 cls 5 = photon), so e.g. the
-        # "track with label 5 -> charged hadron" rule would relabel every muon.
-        # Phase-2 anchoring is already handled in the postprocessing target builder.
-        if ds_name.startswith("cms_") and not ds_name.startswith("cms_pf_phase2"):
+        # Run-3 CMS label harmonization. Must NOT run on the Phase-2 datasets
+        # (cms_pf_phase2_* and cms_pf_ticl_*): their class indices differ (phase2
+        # cls 5 = muon, run3 cls 5 = photon), so e.g. the "track with label 5 ->
+        # charged hadron" rule would relabel every muon. Phase-2 anchoring is
+        # already handled in the postprocessing target builders.
+        if ds_name.startswith("cms_") and not ds_name.startswith(("cms_pf_phase2", "cms_pf_ticl")):
             # track, target label neutral hadron -> reconstruct as charged hadron
             ret["ytarget"][:, 0][(ret["X"][:, 0] == 1) & (ret["ytarget"][:, 0] == 2)] = 1
 
@@ -173,6 +174,13 @@ class PFDataset:
             )
             _logger.error(e)
             sys.exit(1)
+
+        # Datasets built with only a "train" split (e.g. cms_pf_ticl_nopu): fall back
+        # to it for test/valid. The spec MUST then keep the train and valid/test
+        # builder configs DISJOINT, else validation would see training events.
+        if split == "test" and "test" not in builder.info.splits:
+            _logger.warning(f"{name} has no 'test' split; using 'train' — configs must be disjoint from the training ones")
+            split = "train"
 
         _logger.debug(f"PFDataset opening dataset {name} in {builder.data_path} for split {split}")
         self.ds = TFDSDataSource(builder.as_data_source(split=split), sort=sort, pad_to_multiple=pad_to_multiple, feature_dim=feature_dim)

@@ -416,6 +416,16 @@ productions:
         version: "1.0.0"
         config_ids: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
 
+  # Phase-2 v3: moanwar's tfds (agreed target: his script minus gen matching).
+  # Single mixed builder cms_pf_ticl_nopu:2.0.0, 50 configs, TRAIN SPLIT ONLY
+  # (PFDataset falls back valid/test->train; configs below are kept DISJOINT).
+  cms_phase2_v3_ngt:
+    type: "cms_phase2_v3"
+    model: "pyg-cms-phase2-v3"
+    comment: "Phase-2 TICL v3 target (no gen matching), ttbar+qcd+zll 0PU, moanwar production"
+    workspace_dir: "/shared/mlpf-phase2" # tfds under tfds_v3 via --data-dir
+    config_dir: "/shared/particleflow"
+
 # -----------------------------------------------------------------------------
 # Model Configurations
 # Defines training recipes. Can inherit from defaults or other models.
@@ -844,3 +854,44 @@ models:
       - name: "cms_pf_phase2_zll_nopu"
         version: "1.0.0"
         splits: ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"]
+
+  # Phase-2 v3 (docs/phase2.md 14): same settled architecture as v1 (2.7M);
+  # input_dim auto = 37 from X_FEATURES[cms_phase2_v3].
+  pyg-cms-phase2-v3:
+    <<: *defaults
+    dataset: cms_phase2_v3
+    gpu_batch_multiplier: 4
+
+    hyperparameters:
+      batch_size: 1
+      lr: 0.0004
+
+    architecture:
+      type: "attention"
+      input_encoding: "split"
+      attention:
+        num_convs: 3
+        head_dim: 16
+        num_heads: 16
+
+    # train/valid configs DISJOINT (dataset has only a train split)
+    train_datasets:
+      physical:
+        batch_size: 16
+        samples:
+          - name: "cms_pf_ticl_nopu"
+            version: "2.0.0"
+            splits: ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16", "17", "18", "19", "20", "21", "22", "23", "24", "25", "26", "27", "28", "29", "30", "31", "32", "33", "34", "35", "36", "37", "38", "39", "40", "41", "42", "43", "44", "45"]
+
+    validation_datasets:
+      physical:
+        batch_size: 16
+        samples:
+          - name: "cms_pf_ticl_nopu"
+            version: "2.0.0"
+            splits: ["46", "47", "48", "49", "50"]
+
+    test_datasets:
+      - name: "cms_pf_ticl_nopu"
+        version: "2.0.0"
+        splits: ["46", "47", "48", "49", "50"]

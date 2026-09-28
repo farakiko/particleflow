@@ -84,6 +84,7 @@ CLASS_LABELS = {
     "cld": CLASS_LABELS_CLIC,
     # Phase-2 TICL uses the same 6-class taxonomy as CLIC (no HF in the endcap-only setup)
     "cms_phase2": CLASS_LABELS_CLIC,
+    "cms_phase2_v3": CLASS_LABELS_CLIC,
 }
 
 # Datasets whose target/model only covers part of the detector: jet plots must
@@ -91,6 +92,7 @@ CLASS_LABELS = {
 # acceptance, else gen-vs-target distributions differ by construction.
 PLOT_JET_ETA_CUT = {
     "cms_phase2": (1.5, 3.0),  # HGCAL endcap
+    "cms_phase2_v3": (1.5, 3.0),
 }
 
 
@@ -188,6 +190,7 @@ EVALUATION_DATASET_NAMES = {
     "cms_pf_phase2_ttbar_nopu": r"Phase-2 $\mathrm{t}\bar{\mathrm{t}}$, no pileup (HGCAL endcap)",
     "cms_pf_phase2_qcd_nopu": r"Phase-2 QCD multijets, no pileup (HGCAL endcap)",
     "cms_pf_phase2_zll_nopu": r"Phase-2 $\mathrm{Z}\rightarrow\ell\ell$, no pileup (HGCAL endcap)",
+    "cms_pf_ticl_nopu": r"Phase-2 $\mathrm{t}\bar{\mathrm{t}}$+QCD+$\mathrm{Z}\rightarrow\ell\ell$, no pileup (HGCAL endcap, v3 target)",
 }
 
 GENJET_BINS_PT_DATASET = {
@@ -195,6 +198,7 @@ GENJET_BINS_PT_DATASET = {
     "cld": [10, 20, 40, 60, 80, 100, 200],
     "cms": [10, 20, 40, 60, 80, 100, 200, 400, 800],
     "cms_phase2": [10, 20, 40, 60, 80, 100, 200, 400],
+    "cms_phase2_v3": [10, 20, 40, 60, 80, 100, 200, 400],
 }
 
 SAMPLE_NAME_TO_PROCESS = {
@@ -345,6 +349,7 @@ def cms_phase2_label(ax):
 EXPERIMENT_LABELS = {
     "cms": cms_label,
     "cms_phase2": cms_phase2_label,
+    "cms_phase2_v3": cms_phase2_label,
     "clic": clic_label,
     "cld": cld_label,
     "clic_hits": clic_label,
