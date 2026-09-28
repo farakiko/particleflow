@@ -154,7 +154,7 @@ def main():
     ap.add_argument("--outdir", required=True)
     ap.add_argument("--max-files", type=int, default=200)
     ap.add_argument("--proc-label", default=r"$\mathrm{t}\bar{\mathrm{t}}$+QCD+DY, 0 PU")
-    ap.add_argument("--formats", nargs="+", default=["png", "pdf"])
+    ap.add_argument("--formats", nargs="+", default=["pdf"])
     ap.add_argument("--gen-window", nargs=2, type=float, default=[1.5, 3.0], metavar=("LO", "HI"),
                     help="fixed |eta| window applied to GEN in denominator plots (sumpt/MET ratios, "
                          "efficiency): the stored gen extends beyond the target acceptance "
