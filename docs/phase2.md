@@ -397,6 +397,13 @@ Sequencing: after the 100k v3 baseline finishes (GPU is busy until then).
 
 ## 14. v3 target definition — PRECISE semantics (2026-09-22, code-verified; THE production)
 
+**✅ v3 TRAINING COMPLETE (2026-09-28 17:48, evaluated 2026-09-29):** 100k steps / 4.5h on
+one MIG slice, exit 0, on moanwar's tfds (train configs 1–45, valid 46–50 disjoint).
+Valid loss: 2.543 (30k) → 2.382 (70k) → 2.3358 (100k) — a new best at EVERY validation
+(never stale; longer training still pays). Experiment:
+`pyg-cms-phase2-v3_cms_phase2_v3_ngt_20260928_131823_*` (mirrored to eos). The 30k point
+(2.543) doubles as scan-1 of the §15 scaling ladder.
+
 `postprocessing_ticl_acceptance.py` = moanwar's script; sole changes: gen matching → acceptance
 (one function) + uncut reference storage (stable_gen block). Condor: `PP_MODE=acceptance` → `pkl_v3`.
 
