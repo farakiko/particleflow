@@ -370,12 +370,26 @@ aleatoric floor (IQR ~0.95, §9B), and the 2.9M model already sits at the target
 
 **Fixed-steps scan (30k steps, batch 64, v3 tfds; lr ∝ 1/width):**
 
-| point | shape (d, L) | params | lr | where |
-|---|---|---|---|---|
-| s1 | 256, 3 | 2.92M | 4e-4 | = the running v3 100k training (read its 30k point) |
-| s2 | 512, 3 | 11.6M | 2.5e-4 | MIG slice, overnight |
-| s3 | 640, 10 | 35.4M | 1.6e-4 | MIG slice, ~1.5 d |
-| s4 | 1024, 13 | 109M | 1e-4 | **needs a full H100** (ask NGT; MIG = days + memory-tight) |
+| point | shape (d, L) | params | lr | where | **valid @30k** | **jet med/IQR @30k** |
+|---|---|---|---|---|---|---|
+| s1 | 256, 3 | 2.92M | 4e-4 | = the v3 100k training (its 30k point) | **2.5430** | 0.997 / 0.169 |
+| s2 | 512, 3 | 11.6M | 2.5e-4 | MIG slice, 98 min (2026-09-29) | **2.5149** | 1.000 / 0.144 |
+| s3 | 640, 10 | 35.4M | 1.6e-4 | MIG slice, launched 2026-09-29 | | |
+| s4 | 1024, 13 | 109M | 1e-4 | see memory-fit note below | | |
+
+s1→s2 read (2026-09-29): 4× params buys Δvalid −0.028 (−1.1%) and jet IQR 0.169→0.144.
+Iso-step s2 led by only ~0.02 all along (2.737 vs 2.758 @10k, 2.582 vs 2.603 @20k). CAVEAT:
+s1's number is from the 100k-cosine run (LR ~59% of peak at 30k, NOT annealed); s2 is fully
+annealed at 30k, so ~half the final gap may be annealing, not capacity. For a clean iso-protocol
+s1 a 30k-cosine rerun (~1h) is the fix — decide after s3.
+
+s4 memory-fit smokes (2026-09-29, MIG 1g.12gb): standard batch (16×4=64/step) = masked OOM
+(allocator NVML assert in first forward); **multiplier 1 (16/step) trains fine** (50 steps +
+validation). bf16 already on; no activation-checkpointing knob. Cluster probes: only
+`mig-1g.12gb` schedulable from the namespace (2 GPU nodes; `nvidia.com/gpu` and `mig-3g.47gb`
+both unschedulable) → s4 paths: (a) grad-accumulation ×4 patch to training.py (protocol-exact,
+~1.5–2 d wall, fits 7-d pod lifetime), (b) NGT admin ask for a bigger profile (speed upgrade,
+no longer a prerequisite), (c) effective batch 16 (breaks comparability — no).
 
 Distribution rationale: extra params go to the **backbone** (L 3→13 message-passing rounds —
 the relational bottleneck; d/L ≈ 79, canonical band). Heads/encoders scale as d² automatically
