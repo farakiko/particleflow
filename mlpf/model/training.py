@@ -998,8 +998,9 @@ def run_test(rank, world_size, config: MLPFConfig, outdir, model, sample, testdi
 
     vals_for_test = ["X", "ytarget", "ytarget_pt_orig", "ytarget_e_orig", "ycand", "genjets", "targetjets"]
 
-    # pythia branch was introduced for cms in version 2.8.0
-    if sample.startswith("cms_") and version and Version(version) >= Version("2.8.0"):
+    # pythia branch was introduced for cms in version 2.8.0; the phase-2 ticl tfds
+    # (cms_pf_ticl_*, own versioning from 2.0.0) has carried it from the start
+    if sample.startswith("cms_pf_ticl") or (sample.startswith("cms_") and version and Version(version) >= Version("2.8.0")):
         vals_for_test += ["pythia"]
 
     test_loader = torch.utils.data.DataLoader(
