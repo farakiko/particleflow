@@ -534,6 +534,11 @@ class AttentionConfig(BaseModel):
     dropout_conv_id_mha: float = 0.0
     dropout_conv_id_ff: float = 0.0
     use_pre_layernorm: bool = True
+    # LayerScale (CaiT): learnable per-channel gate on each residual branch, init small so a
+    # deep stack starts near-identity and "turns on" depth during training. Off by default so
+    # existing models/scan points are byte-identical. See docs/phase2.md 15.
+    use_layerscale: bool = False
+    layerscale_init: float = 1e-4
     export_onnx_fused: bool = False
     save_attention: bool = False
 

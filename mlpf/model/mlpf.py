@@ -157,6 +157,8 @@ class PreLnSelfAttentionLayer(nn.Module):
         elems_as_queries=False,
         export_onnx_fused=False,
         save_attention=False,
+        use_layerscale=False,
+        layerscale_init=1e-4,
     ):
         super(PreLnSelfAttentionLayer, self).__init__()
         self.name = name
@@ -177,6 +179,12 @@ class PreLnSelfAttentionLayer(nn.Module):
         self.norm1 = torch.nn.LayerNorm(embedding_dim)
         self.seq = torch.nn.Sequential(nn.Linear(embedding_dim, width), self.act(), nn.Linear(width, embedding_dim), self.act())
         self.dropout = torch.nn.Dropout(dropout_ff)
+
+        # LayerScale: per-channel learnable gate on each residual branch (init small).
+        self.use_layerscale = use_layerscale
+        if use_layerscale:
+            self.ls_mha = nn.Parameter(layerscale_init * torch.ones(embedding_dim))
+            self.ls_ffn = nn.Parameter(layerscale_init * torch.ones(embedding_dim))
 
         self.learnable_queries = learnable_queries
         self.elems_as_queries = elems_as_queries
@@ -214,6 +222,8 @@ class PreLnSelfAttentionLayer(nn.Module):
             q = q * mask_
 
         mha_out = self.mha(q, x_norm, x_norm, need_weights=False)[0]
+        if self.use_layerscale:
+            mha_out = self.ls_mha * mha_out
 
         self.mha_res_norm = mha_out.norm().detach()
 
@@ -222,6 +232,8 @@ class PreLnSelfAttentionLayer(nn.Module):
         x_norm = self.norm1(x)
         ffn_out = self.seq(x_norm)
         ffn_out = self.dropout(ffn_out)
+        if self.use_layerscale:
+            ffn_out = self.ls_ffn * ffn_out
 
         self.ffn_res_norm = ffn_out.norm().detach()
 
@@ -406,6 +418,8 @@ class MLPF(nn.Module):
             self.use_pre_layernorm = sub_config.use_pre_layernorm
             export_onnx_fused = sub_config.export_onnx_fused
             save_attention = sub_config.save_attention
+            use_layerscale = sub_config.use_layerscale
+            layerscale_init = sub_config.layerscale_init
 
             embedding_dim = num_heads * head_dim
             width = num_heads * head_dim
@@ -508,6 +522,8 @@ class MLPF(nn.Module):
                     "num_attention_heads": num_attention_heads if self.conv_type == ModelType.GNNLSH else None,
                     "num_or_hashes": num_or_hashes if self.conv_type == ModelType.GNNLSH else None,
                     "num_and_hashes": num_and_hashes if self.conv_type == ModelType.GNNLSH else None,
+                    "use_layerscale": use_layerscale if self.conv_type == ModelType.ATTENTION else False,
+                    "layerscale_init": layerscale_init if self.conv_type == ModelType.ATTENTION else 0.0,
                 },
             }
             if self.use_split_backbone:
@@ -679,6 +695,8 @@ class MLPF(nn.Module):
                 elems_as_queries=is_last,
                 export_onnx_fused=export_onnx_fused,
                 save_attention=save_attention,
+                use_layerscale=layer_params.get("use_layerscale", False),
+                layerscale_init=layer_params.get("layerscale_init", 1e-4),
             )
         if self.conv_type == ModelType.GNNLSH:
             gnn_conf = {
