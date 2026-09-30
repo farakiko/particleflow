@@ -374,7 +374,7 @@ aleatoric floor (IQR ~0.95, §9B), and the 2.9M model already sits at the target
 |---|---|---|---|---|---|---|
 | s1 | 256, 3 | 2.92M | 4e-4 | = the v3 100k training (its 30k point) | **2.5430** | 0.997 / 0.169 |
 | s2 | 512, 3 | 11.6M | 2.5e-4 | MIG slice, 98 min (2026-09-29) | **2.5149** | 1.000 / 0.144 |
-| s3 | 640, 10 | 35.4M | 1.6e-4 | MIG slice, launched 2026-09-29 | | |
+| s3 | 640, 10 | 35.4M | 1.6e-4 | MIG slice, 189 min (2026-09-29; OOM+relaunch, see note) | **2.4747** | 0.989 / **0.243** |
 | s4 | 1024, 13 | 109M | 1e-4 | see memory-fit note below | | |
 
 s1→s2 read (2026-09-29): 4× params buys Δvalid −0.028 (−1.1%) and jet IQR 0.169→0.144.
@@ -383,13 +383,48 @@ s1's number is from the 100k-cosine run (LR ~59% of peak at 30k, NOT annealed); 
 annealed at 30k, so ~half the final gap may be annealing, not capacity. For a clean iso-protocol
 s1 a 30k-cosine rerun (~1h) is the fix — decide after s3.
 
-s4 memory-fit smokes (2026-09-29, MIG 1g.12gb): standard batch (16×4=64/step) = masked OOM
-(allocator NVML assert in first forward); **multiplier 1 (16/step) trains fine** (50 steps +
-validation). bf16 already on; no activation-checkpointing knob. Cluster probes: only
-`mig-1g.12gb` schedulable from the namespace (2 GPU nodes; `nvidia.com/gpu` and `mig-3g.47gb`
-both unschedulable) → s4 paths: (a) grad-accumulation ×4 patch to training.py (protocol-exact,
-~1.5–2 d wall, fits 7-d pod lifetime), (b) NGT admin ask for a bigger profile (speed upgrade,
-no longer a prerequisite), (c) effective batch 16 (breaks comparability — no).
+**s3 read (2026-09-30) — THE TWO METRIC FAMILIES DISAGREE (verified numbers, hypothesised cause):**
+Per-particle loss: s3 is BEST and the gain is ACCELERATING — valid 2.543→2.515→2.475
+(Δ s1→s2 −0.028, Δ s2→s3 −0.040). s3 wins on EVERY component vs s2: Classification_binary
+1.948 vs 1.978, Regression_pt 0.2434 vs 0.2485, Regression_energy 0.2617 vs 0.2669.
+Jet level: s3 REGRESSED on both event metrics — jet-pT IQR 0.243 (vs s2 0.144, even worse than
+s1 0.169) and jet match_frac 0.669 (vs s2 0.771, s1 0.789). So better per-particle pT regression
+did NOT translate to jet-pT resolution; it got worse. Key tell: s3's jet IQR was STUCK the whole
+run (0.257→0.256→0.252→0.238→0.243 at 5/10/15/20/30k — never cleaned up), whereas s2's annealed
+sharply (0.245@15k→0.144@30k). VERIFIED = the numbers. HYPOTHESES for the cause (not resolved):
+(H-undertrain, leading) the deep L10 model at low LR (1.6e-4) converged the token-level loss but
+NOT the correlated event-level behaviour jet clustering needs; fixed-30k is unfair to deeper nets.
+(H-depth-pathology) L10 backbone itself hurts per-event pT coherence (over-smoothing / multiplicity
+shift) even as per-particle metrics improve — jet med ~0.99 is unbiased, so it is a RESOLUTION +
+MATCHING problem (spread + fewer matched jets), not a bias.
+
+**Decision-rule verdict = MIXED (explicitly the pre-agreed "else" branch).** Valid loss still
+dropping ⇒ would justify s4; but jet IQR did NOT anneal ⇒ superiority NOT confirmed. Do NOT launch
+s4 at fixed-30k yet — s4 is deeper (L13) + lower LR (1e-4), so it would be even more undertrained
+on jets at 30k and reproduce this ambiguity. NEXT (cheapest decisive test): extend s3 from its 30k
+checkpoint (checkpoints at 10k/20k/30k exist) for +30–70k steps and watch jet IQR. Cleans up toward
+≤0.144 ⇒ H-undertrain confirmed → give deep models more step budget, THEN s4 is justified. Stays
+stuck ~0.24 ⇒ H-depth-pathology → the depth-heavy distribution (L10/L13) is the wrong axis;
+reconsider width-heavy or moderate-depth before committing 109M.
+
+**MIG memory / the NVML allocator assert (2026-09-29).** s3 (35.4M) at batch 64 first OOM'd at
+step 5700 — a masked OOM surfacing as `RuntimeError: NVML_SUCCESS == r ... CUDACachingAllocator
+.cpp:1165` during a training-step LayerNorm (on MIG, under memory pressure the allocator queries
+NVML for free mem, is denied — same "[Insufficient Permissions]" nvidia-smi shows — and asserts
+instead of OOMing cleanly). FIX: relaunch with `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True`
+— s3 then ran clean to 30k. So s3's OOM was FRAGMENTATION, not a hard >12GB wall. `expandable_
+segments:True` is now folded into `launch_scan_job.sh` (container env) for reproducibility.
+
+s4 memory-fit smokes (2026-09-29, MIG 1g.12gb): standard batch (16×4=64/step) = the same masked
+OOM but in the FIRST forward (harder ceiling than s3's step-5700 spike); **multiplier 1 (16/step)
+trains fine** (50 steps + validation). bf16 already on; no activation-checkpointing knob. Cluster
+probes: only `mig-1g.12gb` schedulable from the namespace (2 GPU nodes; `nvidia.com/gpu` and
+`mig-3g.47gb` both unschedulable). Because expandable_segments rescued s3, **retry an s4 batch-64
+smoke WITH that env var before concluding s4 needs grad-accum** (it may not — but s4's first-forward
+death suggests a genuinely harder ceiling, so grad-accum stays the fallback). s4 paths if it truly
+won't fit: (a) grad-accumulation ×4 patch to training.py (protocol-exact, ~1.5–2 d wall, fits 7-d
+pod lifetime), (b) NGT admin ask for a bigger profile, (c) effective batch 16 (breaks comparability
+— no). NB: launch s4 only AFTER the s3 jet-IQR anomaly above is resolved.
 
 Distribution rationale: extra params go to the **backbone** (L 3→13 message-passing rounds —
 the relational bottleneck; d/L ≈ 79, canonical band). Heads/encoders scale as d² automatically

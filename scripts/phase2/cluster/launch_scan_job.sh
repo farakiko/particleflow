@@ -42,6 +42,9 @@ spec:
             2>&1 | tee -a /shared/mlpf-phase2/logs/scan_${POINT}.log
         env:
         - {name: PYTHONUNBUFFERED, value: "1"}
+        # expandable_segments avoids the MIG NVML allocator assert (fragmentation OOM);
+        # required for s3 (35.4M) to train at batch 64 on a 1g.12gb slice. See docs/phase2.md 15.
+        - {name: PYTORCH_CUDA_ALLOC_CONF, value: "expandable_segments:True"}
         volumeMounts:
         - name: shared
           mountPath: /shared
