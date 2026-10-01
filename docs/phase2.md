@@ -375,7 +375,10 @@ aleatoric floor (IQR ~0.95, §9B), and the 2.9M model already sits at the target
 | s1 | 256, 3 | 2.92M | 4e-4 | = the v3 100k training (its 30k point) | **2.5430** | 0.997 / 0.169 |
 | s2 | 512, 3 | 11.6M | 2.5e-4 | MIG slice, 98 min (2026-09-29) | **2.5149** | 1.000 / 0.144 |
 | s3 | 640, 10 | 35.4M | 1.6e-4 | MIG slice, 189 min (2026-09-29; OOM+relaunch, see note) | **2.4747** | 0.989 / **0.243** |
+| s3-ls | 640, 10 +LayerScale | 35.4M | 1.6e-4 | MIG slice, 197 min (2026-09-30) | **2.5326** | 0.999 / **0.160** |
 | s4 | 1024, 13 | 109M | 1e-4 | see memory-fit note below | | |
+
+(match_frac @30k: s1 0.789, s2 0.771, s3 0.669, **s3-ls 0.831**.)
 
 s1→s2 read (2026-09-29): 4× params buys Δvalid −0.028 (−1.1%) and jet IQR 0.169→0.144.
 Iso-step s2 led by only ~0.02 all along (2.737 vs 2.758 @10k, 2.582 vs 2.603 @20k). CAVEAT:
@@ -398,14 +401,29 @@ NOT the correlated event-level behaviour jet clustering needs; fixed-30k is unfa
 shift) even as per-particle metrics improve — jet med ~0.99 is unbiased, so it is a RESOLUTION +
 MATCHING problem (spread + fewer matched jets), not a bias.
 
-**Decision-rule verdict = MIXED (explicitly the pre-agreed "else" branch).** Valid loss still
-dropping ⇒ would justify s4; but jet IQR did NOT anneal ⇒ superiority NOT confirmed. Do NOT launch
-s4 at fixed-30k yet — s4 is deeper (L13) + lower LR (1e-4), so it would be even more undertrained
-on jets at 30k and reproduce this ambiguity. NEXT (cheapest decisive test): extend s3 from its 30k
-checkpoint (checkpoints at 10k/20k/30k exist) for +30–70k steps and watch jet IQR. Cleans up toward
-≤0.144 ⇒ H-undertrain confirmed → give deep models more step budget, THEN s4 is justified. Stays
-stuck ~0.24 ⇒ H-depth-pathology → the depth-heavy distribution (L10/L13) is the wrong axis;
-reconsider width-heavy or moderate-depth before committing 109M.
+**s3-ls read (2026-09-30) — LayerScale FIXES the jet pathology; H-depth-pathology confirmed.**
+s3-ls = s3 (d640 L10, lr 1.6e-4, 30k) + LayerScale (per-channel learnable residual gates, init
+1e-4; +12,800 params, verified backbone 24,652,800). Result on jets: IQR 0.243→**0.160**, match
+0.669→**0.831** (best of all four), jet med 0.989→**0.999**. And immediate — IQR was already 0.180
+at the FIRST validation (5k) vs s3's stuck 0.257. So s3's jet failure was largely DEPTH-PATHOLOGY:
+full-strength residuals in a 10-deep stack produced event-level incoherence; gating the branches so
+the stack starts near-identity fixed it. (Resolves the s3 anomaly — architectural, not just budget.)
+COST: per-particle loss got WORSE — s3-ls valid 2.5326 vs s3 2.4747, every component up (clsB 1.988
+vs 1.948, Rpt 0.252 vs 0.243). Classic LayerScale signature: near-identity init trains "effectively
+shallow" early, so at 30k the token task is UNDER-converged. NET vs s2 (11.6M): roughly a WASH /
+s2 slightly ahead — valid 2.533 vs 2.515, jet IQR 0.160 vs 0.144 (s2 better), match 0.831 vs 0.771
+(s3-ls better). So 3× capacity does NOT clearly beat 11.6M at 30k.
+
+**Updated verdict (2026-09-30): s4 NOT justified at fixed-30k; the scan is now budget-limited.**
+LayerScale is a keeper (it removes the deep-model jet pathology and should be ON for any L≥10 run),
+but it exposes that 30k steps is too short to rank these models: s1 itself improved all the way to
+100k (2.543@30k→2.336@100k), and LayerScale nets need MORE training (gates grow from 1e-4), which is
+exactly why s3-ls lost the per-particle edge at 30k. Launching a LayerScale s4 at 30k would be even
+more undertrained. CLEAN NEXT TEST (awaiting Farouk's go): a LONG run — s3-ls at ~100k (match s1's
+budget) — to see if LayerScale+capacity converges past s2/s3 on per-particle AND drives jet IQR
+below s2's 0.144. If yes → scale helps once depth is enabled → s4 (with LayerScale) is justified.
+(The earlier extend-plain-s3 diagnostic is now lower-value: LayerScale already answered "depth
+pathology vs undertrain" = mostly pathology, now fixed.)
 
 **MIG memory / the NVML allocator assert (2026-09-29).** s3 (35.4M) at batch 64 first OOM'd at
 step 5700 — a masked OOM surfacing as `RuntimeError: NVML_SUCCESS == r ... CUDACachingAllocator
