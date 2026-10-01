@@ -414,6 +414,19 @@ shallow" early, so at 30k the token task is UNDER-converged. NET vs s2 (11.6M): 
 s2 slightly ahead — valid 2.533 vs 2.515, jet IQR 0.160 vs 0.144 (s2 better), match 0.831 vs 0.771
 (s3-ls better). So 3× capacity does NOT clearly beat 11.6M at 30k.
 
+**s3-ls jet win is SOFT-JET-localized (2026-10-01, pT-binned, VERIFIED on preds_test).**
+The pooled history jet metric (ptcut 15, DR 0.1, target→pred) is dominated by soft jets + tight
+axis matching. Per-pT-bin truth: for jets ABOVE ~45 GeV, s2/s3/s3-ls are EQUAL (eff 0.95–0.99,
+IQR ~0.17–0.19, differences ≤0.01). All the model separation lives at 15–30 GeV: at 15–20 GeV
+matching eff is s3-ls 0.705 > s2 0.636 > s3 0.552, and IQR is s3-ls 0.171 < s2 0.217 < s3 0.243.
+So s3's "jet pathology" was specifically a SOFT-JET reconstruction failure (the deep stack
+over-mixing few-constituent jets), and LayerScale's fix is soft-jet efficiency + axis precision.
+Upshot: s3-ls is the best soft-jet reconstructor and tied-best on hard jets → the earlier
+"s2 has the tightest IQR" was a pooled-metric artifact. CAVEAT: did NOT byte-reproduce the pooled
+history IQR (my pooled q75–q25 ≈ 0.19 for ALL three vs history 0.144/0.243/0.160) — plot_jet_ratio
+likely uses a different spread estimator or clusters from model vectors not the parquet particles;
+the pT-binned DIRECTION (hard=equal, soft=s3-ls best) is robust across two independent definitions.
+
 **Updated verdict (2026-09-30): s4 NOT justified at fixed-30k; the scan is now budget-limited.**
 LayerScale is a keeper (it removes the deep-model jet pathology and should be ON for any L≥10 run),
 but it exposes that 30k steps is too short to rank these models: s1 itself improved all the way to
