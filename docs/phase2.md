@@ -438,6 +438,22 @@ below s2's 0.144. If yes → scale helps once depth is enabled → s4 (with Laye
 (The earlier extend-plain-s3 diagnostic is now lower-value: LayerScale already answered "depth
 pathology vs undertrain" = mostly pathology, now fixed.)
 
+**Training regime — SINGLE-EPOCH / data-rich (2026-10-01, VERIFIED from tfds).** Train = 16.2M
+events (configs 1–45), batch 64 → 1 epoch = ~254k steps. The scan NEVER finishes one pass:
+30k = 1.92M events = **0.12 epoch** (12% of data); 100k = 6.4M = **0.39 epoch** (39%). Under one
+epoch the resumable sampler walks a permutation without replacement, so every step is FRESH,
+previously-unseen data. Consequence: here "train longer" ≈ "train on MORE DATA", not re-optimise
+seen data — the 30k→100k gain is largely a DATA-scaling effect. Capacity vs data are separable in
+the iso-budget design: matched steps = same data = capacity axis; across steps, same model = data
+axis. Headroom is large (only 39% of data used at 100k; a 100M model could run to ~254k before any
+repeat), so "data-limited" does NOT bite at 30k/100k — but 16.2M is far short of Chinchilla for
+100M+, so multi-epoch overfitting is the eventual ceiling, not an immediate one.
+
+**100k iso-budget runs LAUNCHED (2026-10-01):** pf-scan-s2-100k + pf-scan-s3-ls-100k (MIG slices,
+expandable_segments, NSTEPS=100000). With s1@100k (2.336) → clean curve 2.9M/11.6M/35.4M at matched
+100k. s4 signal: s2→s3-ls gain still large on per-particle AND soft-jets ⇒ 100M justified;
+flattening ⇒ 11–35M sweet spot.
+
 **MIG memory / the NVML allocator assert (2026-09-29).** s3 (35.4M) at batch 64 first OOM'd at
 step 5700 — a masked OOM surfacing as `RuntimeError: NVML_SUCCESS == r ... CUDACachingAllocator
 .cpp:1165` during a training-step LayerNorm (on MIG, under memory pressure the allocator queries
