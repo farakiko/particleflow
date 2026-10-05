@@ -454,6 +454,24 @@ expandable_segments, NSTEPS=100000). With s1@100k (2.336) → clean curve 2.9M/1
 100k. s4 signal: s2→s3-ls gain still large on per-particle AND soft-jets ⇒ 100M justified;
 flattening ⇒ 11–35M sweet spot.
 
+**100k iso-budget RESULTS (2026-10-05) — PER-PARTICLE SCALING IS FLAT; jets favour the big model.**
+s2@100k COMPLETE (exit 0, 394 min): valid **2.3360**, jet med 0.998 / iqr 0.142 / match 0.843.
+s1@100k = **2.3358** (jet 0.9996 / 0.134 / 0.834). So 2.9M→11.6M at iso-100k buys ~**zero** on
+valid loss (2.3358 vs 2.3360) and a wash on jets → the per-particle task is **saturated / data-
+limited at ~3–12M** (consistent with the 16.2M-event single-epoch regime + the nhad aleatoric
+floor §9B). Matched-step @40k (same data, all three): valid is TIED (s1 2.4828, s3-ls 2.4856,
+s2 2.4879) BUT jets favour the big LayerScale model — jet IQR **s3-ls 0.129 < s1 0.159 < s2 0.169**,
+match s3-ls 0.837 > s1 0.817 > s2 0.797. So capacity+LayerScale helps JETS (esp. soft) even where
+per-particle is flat.
+**s3-ls@100k BLOCKED — deterministic OOM at step 44600** (SAME step on the original run AND the
+resume-from-40k): one oversized batch in the fixed data order that d640 L10 cannot fit at batch 64
+on a 12GB slice. NOT fragmentation (expandable_segments + garbage_collection_threshold did not
+help). Same model-vs-12GB wall as s4. Finishing it needs grad-accum (micro-batch 32 ×2, protocol-
+exact, needs a training.py patch + Farouk OK) OR a bigger GPU profile (NGT admin). AWAITING decision.
+READ: per-particle says 100M will NOT help (saturated); jets say the bigger LayerScale model is
+better at matched budget → the 100M case rests on whether the jet edge keeps growing, which only
+s3-ls@100k settles.
+
 **MIG memory / the NVML allocator assert (2026-09-29).** s3 (35.4M) at batch 64 first OOM'd at
 step 5700 — a masked OOM surfacing as `RuntimeError: NVML_SUCCESS == r ... CUDACachingAllocator
 .cpp:1165` during a training-step LayerNorm (on MIG, under memory pressure the allocator queries
