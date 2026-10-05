@@ -9,8 +9,9 @@
 #   EXP        stable experiment dir                  (default .../experiments/s3ls-prod)
 #   NSTEPS     total optimizer steps                  (default 2530000 = 5 epochs @ batch 32)
 #   GPUS       number of GPUs (DDP if >1)             (default 1)
-#   BMULT      gpu_batch_multiplier (x16 = batch)     (default 2  -> batch 32)
-#   LR         peak learning rate                     (default 0.0001)
+#   BMULT      gpu_batch_multiplier (x16 = per-GPU batch)  (default 2 -> 32/GPU)
+#               NB effective batch = GPUS * BMULT * 16 (e.g. 2 GPUs * 2 = batch 64)
+#   LR         peak learning rate; empty = use the spec's lr (default empty)
 #   VALFREQ    steps between validations              (default 10000)
 #   CKPTFREQ   steps between checkpoints              (default 10000)
 #   NVALID     events per validation                  (default 50000)
@@ -26,7 +27,8 @@ EXP=${EXP:-/shared/mlpf-phase2/experiments/s3ls-prod}
 NSTEPS=${NSTEPS:-2530000}
 GPUS=${GPUS:-1}
 BMULT=${BMULT:-2}
-LR=${LR:-0.0001}
+LR=${LR:-}
+LRARG=""; [ -n "$LR" ] && LRARG="--hyperparameters.lr $LR"
 VALFREQ=${VALFREQ:-10000}
 CKPTFREQ=${CKPTFREQ:-10000}
 NVALID=${NVALID:-50000}
@@ -47,7 +49,7 @@ python mlpf/pipeline.py --spec-file particleflow_spec.yaml \
   --data-dir /shared/mlpf-phase2/tfds_v3 --experiment-dir "$EXP" \
   train --gpus "$GPUS" --gpu_batch_multiplier "$BMULT" \
   --num_steps "$NSTEPS" --val_freq "$VALFREQ" --checkpoint_freq "$CKPTFREQ" --nvalid "$NVALID" \
-  --hyperparameters.lr "$LR" $LOADARG \
+  $LRARG $LOADARG \
   2>&1 | tee -a "$LOG"
 rc=${PIPESTATUS[0]}   # python's exit code, NOT tee's
 kill "$SYNC" 2>/dev/null || true
