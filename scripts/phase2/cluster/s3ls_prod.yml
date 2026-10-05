@@ -1,0 +1,70 @@
+# Long resumable production training of s3-ls (35M + LayerScale) on 2 MIG slices (DDP).
+#   kubectl apply -f scripts/phase2/cluster/s3ls_prod.yml
+# - pf-util: CPU-only pod mounting /shared, for monitoring (monitor_s3ls.sh).
+# - pf-s3ls-prod: 2-GPU DDP, effective batch 64 (32/GPU), 5 epochs (1.27M steps).
+#   restartPolicy OnFailure + backoffLimit 50 -> any crash/eviction auto-restarts and
+#   resume_train.sh resumes from the latest checkpoint in the stable dir s3ls-prod.
+#   To restart from scratch: delete the Job AND the experiment dir
+#   /shared/mlpf-phase2/experiments/s3ls-prod, then re-apply.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pf-util
+  namespace: fmokhtar
+  labels: {home: "eos", mount-eos: "true"}
+spec:
+  restartPolicy: Never
+  volumes:
+  - name: shared
+    persistentVolumeClaim: {claimName: shared}
+  containers:
+  - name: util
+    image: registry.cern.ch/ngt/pytorch:2.3.1
+    command: ["/bin/bash", "-c", "sleep infinity"]
+    volumeMounts: [{name: shared, mountPath: /shared}]
+    resources:
+      requests: {cpu: "2", memory: "8Gi"}
+      limits: {cpu: "4", memory: "16Gi"}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: pf-s3ls-prod
+  namespace: fmokhtar
+spec:
+  backoffLimit: 50
+  template:
+    metadata:
+      labels: {home: "eos", mount-eos: "true"}
+    spec:
+      restartPolicy: OnFailure
+      volumes:
+      - name: shared
+        persistentVolumeClaim: {claimName: shared}
+      containers:
+      - name: train
+        image: registry.cern.ch/ngt/pytorch:2.3.1
+        command: ["/bin/bash", "-c"]
+        args:
+        - bash /shared/particleflow/scripts/phase2/cluster/resume_train.sh
+        env:
+        - {name: PYTHONUNBUFFERED, value: "1"}
+        - {name: PYTORCH_CUDA_ALLOC_CONF, value: "expandable_segments:True"}
+        - {name: MODEL, value: "pyg-cms-phase2-v3-s3-ls"}
+        - {name: EXP, value: "/shared/mlpf-phase2/experiments/s3ls-prod"}
+        - {name: LOGNAME, value: "s3ls_prod"}
+        - {name: GPUS, value: "2"}
+        - {name: BMULT, value: "2"}
+        - {name: NSTEPS, value: "1270000"}
+        - {name: VALFREQ, value: "20000"}
+        - {name: CKPTFREQ, value: "10000"}
+        - {name: NVALID, value: "50000"}
+        volumeMounts: [{name: shared, mountPath: /shared}]
+        resources:
+          requests: {cpu: "8", memory: "24Gi"}
+          limits:
+            cpu: "16"
+            memory: "48Gi"
+            nvidia.com/mig-1g.12gb: 2
+      nodeSelector:
+        nvidia.com/gpu.product: NVIDIA-H100-NVL
