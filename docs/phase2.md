@@ -472,6 +472,22 @@ READ: per-particle says 100M will NOT help (saturated); jets say the bigger Laye
 better at matched budget → the 100M case rests on whether the jet edge keeps growing, which only
 s3-ls@100k settles.
 
+**UPDATE (2026-10-06) — the "saturation" was DATA-LIMITED, not a true floor; s3ls-prod BREAKS IT.**
+The long s3-ls run (s3ls-prod: 2-GPU DDP across 2 MIG slices, effective batch 64, cosine over 1.27M
+steps = 5 epochs; auto-resumable Job) crossed BELOW the s1/s2@100k floor (2.336) around step ~110k
+and kept dropping: valid **2.351@100k → 2.237@200k → 2.203@280k** (~1.1 epoch), still falling with
+LR barely annealed (1.42e-4, 22% through the schedule). Jet IQR down to **0.116–0.119** — the best
+of ANY model (vs s2@100k 0.142, s1@100k 0.134) — with the best match ~0.86. So the "2.9M≈11.6M≈35M
+flat at 100k" result was a **DATA-LIMITATION artifact**: at 0.39 epoch all sizes are data-starved;
+given >1 epoch the 35M+LayerScale model breaks well below the 100k "floor". This VINDICATES the
+depth+data+scale hypothesis (Farouk's prior — the overnight single-epoch-regime note was the tell).
+CAVEAT — capacity vs data NOT separated: s3ls-prod has now seen >1 epoch (18M+ events) vs s2@100k's
+0.39 epoch (6.4M), so the gain conflates MORE DATA with MORE CAPACITY; to attribute to capacity
+cleanly we'd need s2 (or s1) trained to the same >1-epoch budget. What IS clean: more data helps a
+lot (the 100k number is NOT a true floor), and s3-ls+LayerScale trained long is the best model to
+date on BOTH per-particle AND jets. Still improving → continuing to 5 epochs (step 291k, 0 restarts
+across a 15h overnight connectivity/auth outage — the resumable Job design held).
+
 **MIG memory / the NVML allocator assert (2026-09-29).** s3 (35.4M) at batch 64 first OOM'd at
 step 5700 — a masked OOM surfacing as `RuntimeError: NVML_SUCCESS == r ... CUDACachingAllocator
 .cpp:1165` during a training-step LayerNorm (on MIG, under memory pressure the allocator queries
