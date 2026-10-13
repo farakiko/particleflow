@@ -488,6 +488,21 @@ lot (the 100k number is NOT a true floor), and s3-ls+LayerScale trained long is 
 date on BOTH per-particle AND jets. Still improving → continuing to 5 epochs (step 291k, 0 restarts
 across a 15h overnight connectivity/auth outage — the resumable Job design held).
 
+**s3ls-prod COMPLETE (2026-10-13) — 5 epochs, best MLPF model to date.** Finished all 1.27M steps
+(exit 0, ~8600 min/~6 days compute, 0 restarts across the whole multi-day run + several
+connectivity/auth outages — the auto-resume Job never had to recover cluster-side). Final @1.27M:
+**valid 2.0600**, jet med 1.003 / **IQR 0.112** / match 0.860; components clsB 1.637, Rpt 0.1953,
+Ren 0.2107. Curve: 2.614(20k)→2.351(100k)→2.147(500k)→2.075(1.0M)→2.060(1.27M), still drifting
+down at the end. Vs the 100k baselines: **−0.276 on valid loss** (2.060 vs the 2.336 s1/s2 floor,
+~12% better), **−21% jet IQR** (0.112 vs s2 0.142), best match (0.860) and unbiased (med 1.003),
+and every per-particle component far better (clsB 1.637 vs ~1.98, Rpt 0.195 vs 0.249). => the
+depth+data+scale bet is confirmed at full budget: s3-ls+LayerScale trained long is the new best
+model. Checkpoint-1270000.pth + history on /shared/mlpf-phase2/experiments/s3ls-prod (+ eos mirror).
+OPEN (deferred by Farouk until now): the s2/s1 long run to cleanly SEPARATE capacity from data
+(s3ls-prod saw 5 epochs vs the baselines' 0.39; so the gain still conflates more-capacity with
+more-data/training — a matched-budget s2 would isolate it, and is the real test of whether 100M/s4
+is worth it).
+
 **MIG memory / the NVML allocator assert (2026-09-29).** s3 (35.4M) at batch 64 first OOM'd at
 step 5700 — a masked OOM surfacing as `RuntimeError: NVML_SUCCESS == r ... CUDACachingAllocator
 .cpp:1165` during a training-step LayerNorm (on MIG, under memory pressure the allocator queries
