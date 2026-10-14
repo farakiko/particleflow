@@ -24,9 +24,8 @@ case "${PP_MODE}" in
   run3style) PP_SCRIPT=postprocessing_run3style.py;       OUT_PREFIX=run3style; PP_ARGS=() ;;
   ticl)      PP_SCRIPT=postprocessing_ticl_ttbar_nopu.py; OUT_PREFIX=ticl;      PP_ARGS=() ;;   # colleague's script; gen-filter baked in
   acceptance) PP_SCRIPT=postprocessing_ticl_acceptance.py; OUT_PREFIX=acc;      PP_ARGS=(--num-workers 1) ;;  # v3: his script, gen matching -> symmetric acceptance (docs 13)
-  mohamed)   PP_SCRIPT=postprocessing_mohamed.py;         OUT_PREFIX=mohamed;   PP_ARGS=(--gen-filter "${GEN_FILTER}") ;;
   nano_v2)   PP_SCRIPT=postprocessing_ticl_nopu_nano_v2.py; OUT_PREFIX=ticlv2;  PP_ARGS=(--num-workers 1) ;;  # OUR current target (endcap 1.48-3.0, isPU=-1 inputs dropped)
-  *) echo "unknown PP_MODE=${PP_MODE} (want acceptance|run3style|ticl|mohamed|nano_v2)"; exit 1 ;;
+  *) echo "unknown PP_MODE=${PP_MODE} (want acceptance|run3style|ticl|nano_v2)"; exit 1 ;;
 esac
 
 echo "=== job ${JOB_INDEX} on $(hostname) mode=${PP_MODE} args=${PP_ARGS[*]} $(date) ==="

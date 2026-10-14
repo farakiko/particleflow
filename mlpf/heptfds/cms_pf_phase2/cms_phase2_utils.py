@@ -13,7 +13,9 @@ from mlpf.conf import Dataset, X_FEATURES as _XF, Y_FEATURES, CLASS_LABELS
 DS = Dataset.CMS_PHASE2.value
 X_FEATURES = _XF[DS]
 CLS = CLASS_LABELS[DS]                 # [0, 211, 130, 22, 11, 13]
-TYP_MAP = {1: 1, 2: 3, 4: 2}           # element typ -> typ_idx (track=1, trackster=2, gsf=3)
+TYP_MAP = {1: 1, 2: 1, 3: 2, 4: 2}     # nano_v2 Xelem typ -> typ_idx: track=1, gsf=1, trackster=2, EM-supercl=2
+#                                        (cms_phase2 has 2 nonzero element types [1,2]; the old {1:1,2:3,4:2}
+#                                        was for the run3style/v3 codes and sent nano_v2 tracksters (typ 3) to padding)
 NUM_SPLITS = 10
 
 
@@ -43,19 +45,26 @@ def prepare_data_phase2(fn):
 
         # ---- X ----
         phi = Xe["phi"]
+        # Map Xelem -> X_FEATURES['cms_phase2']. The v2 postprocessing
+        # (postprocessing_ticl_nopu_nano_v2.py) prefixes several fields (ts_*, track_*) vs this
+        # builder's original names, and omits the trackster eigenvalues ev1/ev2/ev3 (it carries
+        # shower_depth / n_clusters instead). g() tolerates absent fields by zero-filling.
+        _names = set(Xe.dtype.names)
+        def g(k):
+            return Xe[k] if k in _names else np.zeros(n, np.float32)
         col = {
             "typ_idx": np.array([TYP_MAP.get(int(t), 0) for t in Xe["typ"]], np.float32),
             "pt": Xe["pt"], "eta": Xe["eta"], "sin_phi": np.sin(phi), "cos_phi": np.cos(phi),
             "e": Xe["energy"], "charge": Xe["charge"], "px": Xe["px"], "py": Xe["py"],
             "pz": Xe["pz"], "em_energy": Xe["em_energy"], "nhits": Xe["nhits"],
-            # extended features (pass-through from Xelem; zero-filled where the type lacks them)
-            "bary_z": Xe["bary_z"], "time": Xe["time"], "timeerror": Xe["timeerror"],
-            "ev1": Xe["ev1"], "ev2": Xe["ev2"], "ev3": Xe["ev3"],
-            "muon_type": Xe["muon_type"], "muon_dt_hits": Xe["muon_dt_hits"], "muon_csc_hits": Xe["muon_csc_hits"],
-            "gsf_type": Xe["gsf_type"] if "gsf_type" in Xe.dtype.names else np.zeros(n, np.float32),
-            "pterror": Xe["pterror"], "etaerror": Xe["etaerror"], "phierror": Xe["phierror"],
-            "lambdaerror": Xe["lambdaerror"], "qoverperror": Xe["qoverperror"],
-            "vx": Xe["vx"], "vy": Xe["vy"], "vz": Xe["vz"],
+            "bary_z": Xe["bary_z"],
+            "time": g("ts_time"), "timeerror": g("ts_time_err"),         # v2 rename ts_time(_err)
+            "ev1": g("ev1"), "ev2": g("ev2"), "ev3": g("ev3"),           # not in v2 -> zero (TODO: shower_depth/n_clusters)
+            "muon_type": g("track_muon_type"), "muon_dt_hits": g("track_muon_dt_hits"), "muon_csc_hits": g("track_muon_csc_hits"),
+            "gsf_type": g("track_gsf_type"),
+            "pterror": g("track_pt_err"), "etaerror": g("track_eta_err"), "phierror": g("track_phi_err"),
+            "lambdaerror": g("track_lambda_err"), "qoverperror": g("track_qoverp_err"),
+            "vx": g("track_vx"), "vy": g("track_vy"), "vz": g("track_vz"),
             "min_dR_track": Xe["min_dR_track"], "near_track_pt": Xe["near_track_pt"], "sum_pt_dR10": Xe["sum_pt_dR10"],
             "n_trk_dR01": Xe["n_trk_dR01"], "n_trk_dR02": Xe["n_trk_dR02"], "n_trk_dR03": Xe["n_trk_dR03"],
             "n_trk_dR04": Xe["n_trk_dR04"], "n_trk_dR05": Xe["n_trk_dR05"],
