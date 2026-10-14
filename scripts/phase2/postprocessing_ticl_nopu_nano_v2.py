@@ -256,7 +256,11 @@ def build_gen_to_simcand_map(ev):
     matched_gen_indices     = set()
 
     simcan_pt = ev["simcan_pt"]
-    sc_in_acceptance = (np.abs(sc_match_eta) >= 1.5) & (simcan_pt >= SIMCAND_PT_MIN)
+    sc_in_acceptance = (
+        (np.abs(sc_match_eta) >= TRACK_ETA_MIN)
+        & (np.abs(sc_match_eta) <= TRACK_ETA_MAX)   # endcap upper bound (HGCAL), matches track cut
+        & (simcan_pt >= SIMCAND_PT_MIN)
+    )
 
     # -- gen eta acceptance window: per-side (endcap) envelope of in-acceptance
     #    SimTICLCandidates, i.e. [min|eta|, max|eta|] separately for eta>0 and eta<0 --
@@ -1300,6 +1304,15 @@ def prepare_normalized_table(g):
     primary_pairs = set()
     for elem, cp in elem_to_primary_cp.items():
         primary_pairs.add((cp, elem))
+
+    # Mohamed's rule (2026-10-14): drop input elements whose PRIMARY SimTICLCandidate is
+    # isPU == -1 (unresolved pileup). Those tracks/tracksters leave the input set entirely,
+    # so there is no target particle to predict for them. Filtering all_elements here
+    # propagates to Xelem, ytarget and (downstream) targetjet, all built from it.
+    _pu_unresolved = {elem for elem, cp in elem_to_primary_cp.items()
+                      if g.nodes[cp].get("ispu", 0.0) == -1}
+    if _pu_unresolved:
+        all_elements = [e for e in all_elements if e not in _pu_unresolved]
 
     elem_to_all_cps = defaultdict(list)
     elem_to_cand    = {}

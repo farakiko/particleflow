@@ -45,6 +45,13 @@ rm -f postprocessing_ticl_acceptance.py postprocessing_ticl_ttbar_nopu.py
 # 3. submit v3 (THE production)                   ->  pkl_v3/<sample>/acc_<stem>.pkl
 PP_MODE=acceptance EOS_PATH=/eos/user/f/fmokhtar/mlpf/phase2/pkl_v3 bash submit.sh
 
+# nano_v2 = OUR CURRENT target (postprocessing_ticl_nopu_nano_v2.py: endcap 1.48-3.0,
+#           isPU=-1 input tracks/tracksters dropped).  ->  <EOS_PATH>/<sample>/ticlv2_<stem>.pkl
+# ttbar 200PU production (Mohamed's 1000 files, ~10k PU events):
+NANO=/eos/cms/store/group/dpg_hgcal/comm_hgcal/moanwar/mlpf/nano SAMPLES=ttbar_200pu \
+  PP_MODE=nano_v2 FILES_PER_JOB=5 \
+  EOS_PATH=/eos/user/f/fmokhtar/mlpf/phase2/data/pkl/pkl_ttbar200_v2 bash submit.sh
+
 # (legacy recipes)
 # PP_MODE=run3style EOS_PATH=.../pkl_links_v2 bash submit.sh    # v2, ours
 # PP_MODE=ticl      EOS_PATH=.../pkl_links_v1 bash submit.sh    # v1, his verbatim
