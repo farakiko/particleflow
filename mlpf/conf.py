@@ -629,6 +629,7 @@ class ModelArchitectureConfig(BaseModel):
     energy_mode: RegressionMode = RegressionMode.DIRECT_ELEMTYPE_SPLIT
     trainable: str = "all"
     task_queries: bool = True
+    use_pu_head: bool = False  # Training B: add a per-element isPU classification head (enable its loss via regression_loss_weights.ispu)
     backbone: Optional[BackboneConfig] = None
 
     # Nested configs
@@ -647,6 +648,7 @@ class RegressionLossWeights(BaseModel):
     sin_phi: float = Field(default=1e-2, ge=0.0)
     cos_phi: float = Field(default=1e-2, ge=0.0)
     energy: float = Field(default=1.0, ge=0.0)
+    ispu: float = Field(default=0.0, ge=0.0)  # isPU classification loss weight (0 = off); set >0 together with model.use_pu_head=true (Training B)
 
 
 class DatasetSample(BaseModel):

@@ -79,10 +79,26 @@ def regression_loss(y, ypred, input_pt, regression_weights):
     return losses
 
 
+def pu_loss(y, ypred, regression_weights):
+    """Per-element pileup (isPU) classification loss over real particles.
+
+    Enabled only when regression_weights['ispu'] > 0 (Training B, with model.use_pu_head=true).
+    Target y['ispu'] is 1.0 for pileup, 0.0 for signal (see unpack_target)."""
+    weight = regression_weights.get("ispu", 0.0)
+    if weight <= 0.0:
+        return {}
+    is_particle = y["cls_id"] != 0
+    num_particles = is_particle.sum().clamp_min(1)
+    per_element = F.cross_entropy(ypred["ispu"], y["ispu"].long(), reduction="none")
+    per_element = torch.where(is_particle, per_element, torch.zeros_like(per_element))
+    return {"Classification_pu": weight * per_element.sum() / num_particles}
+
+
 def particle_loss(y, ypred, input_pt, regression_weights, class_weights=None):
     """Compute classification and regression losses over flattened particles."""
     losses = classification_loss(y, ypred, class_weights)
     losses.update(regression_loss(y, ypred, input_pt, regression_weights))
+    losses.update(pu_loss(y, ypred, regression_weights))
     return losses
 
 
@@ -97,11 +113,13 @@ def event_loss(y, ypred, batch, regression_weights, class_weights=None):
 
     particle_targets = {
         "cls_id": y["cls_id"][valid],
+        "ispu": y["ispu"][valid],
         **{feature: y[feature][valid] for feature in REGRESSION_FEATURES},
     }
     particle_predictions = {
         "cls_binary": ypred["cls_binary"][valid],
         "cls_id_onehot": ypred["cls_id_onehot"][valid],
+        "ispu": ypred["ispu"][valid],
         **{feature: ypred[feature][valid] for feature in REGRESSION_FEATURES},
     }
     input_pt = batch.X[..., 1][valid]

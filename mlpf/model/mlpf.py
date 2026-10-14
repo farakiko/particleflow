@@ -591,6 +591,11 @@ class MLPF(nn.Module):
         self.nn_binary_particle = ffn(decoding_dim, 2, width, self.act, head_dropout_ff)
         self.nn_pid = ffn(decoding_dim, self.num_classes, width, self.act, head_dropout_ff)
 
+        # Training B: optional per-element isPU (pileup) classification head (2 logits: signal/pileup).
+        # When disabled, forward() keeps the zeros stub so the output tuple is unchanged.
+        self.use_pu_head = bool(getattr(self.config, "use_pu_head", False))
+        self.nn_ispu = ffn(decoding_dim, 2, width, self.act, head_dropout_ff) if self.use_pu_head else None
+
         self.nn_pt = RegressionOutput(pt_mode, decoding_dim, width, self.act, head_dropout_ff, regression_selector_values)
         self.nn_eta = RegressionOutput(eta_mode, decoding_dim, width, self.act, head_dropout_ff, regression_selector_values)
         self.nn_sin_phi = RegressionOutput(sin_phi_mode, decoding_dim, width, self.act, head_dropout_ff, regression_selector_values)
@@ -850,7 +855,7 @@ class MLPF(nn.Module):
 
         preds_binary_particle = self.nn_binary_particle(final_embedding_cls)
         preds_pid = self.nn_pid(final_embedding_cls)
-        preds_pu = torch.zeros_like(preds_binary_particle)
+        preds_pu = self.nn_ispu(final_embedding_cls) if self.nn_ispu is not None else torch.zeros_like(preds_binary_particle)
 
         # The PFElement feature order in X_features defined in fcc/postprocessing.py
         preds_pt = self.nn_pt(X_features, final_embedding_reg, X_features[..., 1:2])
