@@ -1,0 +1,73 @@
+# ttbar 200PU heptv2 PU-mitigation variants C & D (the pt-shortcut fixes), 1 MIG slice each:
+#   kubectl apply -f scripts/phase2/cluster/train_200pu_cd.yml
+# - pf-ttbar200-c : PU head + DisCo pT-decorrelation.
+# - pf-ttbar200-d : PU head + per-pT-bin class-balanced PU loss.
+apiVersion: batch/v1
+kind: Job
+metadata: {name: pf-ttbar200-c, namespace: fmokhtar}
+spec:
+  backoffLimit: 50
+  template:
+    metadata: {labels: {home: "eos", mount-eos: "true"}}
+    spec:
+      restartPolicy: OnFailure
+      volumes: [{name: shared, persistentVolumeClaim: {claimName: shared}}]
+      containers:
+      - name: train
+        image: registry.cern.ch/ngt/pytorch:2.3.1
+        command: ["/bin/bash", "-c"]
+        args: [bash /shared/particleflow/scripts/phase2/cluster/resume_train.sh]
+        env:
+        - {name: PYTHONUNBUFFERED, value: "1"}
+        - {name: PYTORCH_CUDA_ALLOC_CONF, value: "expandable_segments:True"}
+        - {name: MODEL, value: "pyg-cms-phase2-200pu-heptv2-pu-disco"}
+        - {name: PROD, value: "cms_phase2_ngt"}
+        - {name: DATADIR, value: "/shared/mlpf-phase2/tfds"}
+        - {name: EXP, value: "/shared/mlpf-phase2/experiments/ttbar200-heptv2-pu-disco"}
+        - {name: LOGNAME, value: "ttbar200_heptv2_pu_disco"}
+        - {name: GPUS, value: "1"}
+        - {name: BMULT, value: "1"}
+        - {name: NSTEPS, value: "50000"}
+        - {name: VALFREQ, value: "2500"}
+        - {name: CKPTFREQ, value: "2500"}
+        - {name: NVALID, value: "2000"}
+        volumeMounts: [{name: shared, mountPath: /shared}]
+        resources:
+          requests: {cpu: "8", memory: "24Gi"}
+          limits: {cpu: "16", memory: "48Gi", nvidia.com/mig-1g.12gb: 1}
+      nodeSelector: {nvidia.com/gpu.product: NVIDIA-H100-NVL}
+---
+apiVersion: batch/v1
+kind: Job
+metadata: {name: pf-ttbar200-d, namespace: fmokhtar}
+spec:
+  backoffLimit: 50
+  template:
+    metadata: {labels: {home: "eos", mount-eos: "true"}}
+    spec:
+      restartPolicy: OnFailure
+      volumes: [{name: shared, persistentVolumeClaim: {claimName: shared}}]
+      containers:
+      - name: train
+        image: registry.cern.ch/ngt/pytorch:2.3.1
+        command: ["/bin/bash", "-c"]
+        args: [bash /shared/particleflow/scripts/phase2/cluster/resume_train.sh]
+        env:
+        - {name: PYTHONUNBUFFERED, value: "1"}
+        - {name: PYTORCH_CUDA_ALLOC_CONF, value: "expandable_segments:True"}
+        - {name: MODEL, value: "pyg-cms-phase2-200pu-heptv2-pu-rew"}
+        - {name: PROD, value: "cms_phase2_ngt"}
+        - {name: DATADIR, value: "/shared/mlpf-phase2/tfds"}
+        - {name: EXP, value: "/shared/mlpf-phase2/experiments/ttbar200-heptv2-pu-rew"}
+        - {name: LOGNAME, value: "ttbar200_heptv2_pu_rew"}
+        - {name: GPUS, value: "1"}
+        - {name: BMULT, value: "1"}
+        - {name: NSTEPS, value: "50000"}
+        - {name: VALFREQ, value: "2500"}
+        - {name: CKPTFREQ, value: "2500"}
+        - {name: NVALID, value: "2000"}
+        volumeMounts: [{name: shared, mountPath: /shared}]
+        resources:
+          requests: {cpu: "8", memory: "24Gi"}
+          limits: {cpu: "16", memory: "48Gi", nvidia.com/mig-1g.12gb: 1}
+      nodeSelector: {nvidia.com/gpu.product: NVIDIA-H100-NVL}

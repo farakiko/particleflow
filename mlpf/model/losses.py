@@ -79,26 +79,80 @@ def regression_loss(y, ypred, input_pt, regression_weights):
     return losses
 
 
-def pu_loss(y, ypred, regression_weights):
-    """Per-element pileup (isPU) classification loss over real particles.
+def _distance_corr(x, z, eps=1e-8):
+    """Differentiable distance correlation between 1-D x and z (same length). Used to
+    penalize dependence of the PU score on pT (Training C, DisCo decorrelation)."""
+    n = x.shape[0]
+    if n < 2:
+        return x.new_tensor(0.0)
+    a = torch.abs(x.unsqueeze(0) - x.unsqueeze(1))
+    b = torch.abs(z.unsqueeze(0) - z.unsqueeze(1))
+    A = a - a.mean(dim=0, keepdim=True) - a.mean(dim=1, keepdim=True) + a.mean()
+    B = b - b.mean(dim=0, keepdim=True) - b.mean(dim=1, keepdim=True) + b.mean()
+    dcov2 = (A * B).mean()
+    dvar = torch.sqrt((A * A).mean() * (B * B).mean())
+    return dcov2 / (dvar + eps)
 
-    Enabled only when regression_weights['ispu'] > 0 (Training B, with model.use_pu_head=true).
-    Target y['ispu'] is 1.0 for pileup, 0.0 for signal (see unpack_target)."""
+
+def _ptbin_class_balance(pt, target, mask, nbins=10):
+    """Per-pT-bin inverse-class-frequency weights: balances signal/pileup within each log-pT
+    bin so pT carries no information about the isPU label (removes the pt shortcut, Training D)."""
+    w = torch.ones_like(pt)
+    if mask.sum() < 2:
+        return w
+    lp = torch.log(pt.clamp_min(1e-3))
+    lo, hi = float(lp[mask].min()), float(lp[mask].max())
+    edges = torch.linspace(lo, hi, nbins + 1, device=pt.device)
+    binidx = torch.bucketize(lp, edges)
+    for b in torch.unique(binidx[mask]):
+        inb = mask & (binidx == b)
+        ntot = inb.sum().float()
+        for c in (0, 1):
+            mc = inb & (target == c)
+            nc = mc.sum()
+            if nc > 0:
+                w[mc] = ntot / (2.0 * nc.float())
+    return w
+
+
+def pu_loss(y, ypred, input_pt, regression_weights):
+    """Per-element pileup (isPU) classification loss over real particles, with optional
+    pT-decorrelation (DisCo, Training C) and per-pT-bin class balancing (Training D).
+
+    Enabled only when regression_weights['ispu'] > 0 (Training B+). Target y['ispu'] is 1.0
+    for pileup, 0.0 for signal (see unpack_target)."""
     weight = regression_weights.get("ispu", 0.0)
     if weight <= 0.0:
         return {}
     is_particle = y["cls_id"] != 0
     num_particles = is_particle.sum().clamp_min(1)
-    per_element = F.cross_entropy(ypred["ispu"], y["ispu"].long(), reduction="none")
+    target = y["ispu"].long()
+    per_element = F.cross_entropy(ypred["ispu"], target, reduction="none")
+
+    # Training D: per-pT-bin class balancing removes the pt shortcut from the CE itself.
+    if regression_weights.get("pu_reweight", 0.0) > 0.0:
+        per_element = per_element * _ptbin_class_balance(input_pt, target, is_particle)
+
     per_element = torch.where(is_particle, per_element, torch.zeros_like(per_element))
-    return {"Classification_pu": weight * per_element.sum() / num_particles}
+    losses = {"Classification_pu": weight * per_element.sum() / num_particles}
+
+    # Training C: DisCo penalty on P(pileup) vs pT over SIGNAL particles -> flat signal
+    # acceptance in pT (keeps pileup free to be genuinely soft-leaning).
+    disco_w = regression_weights.get("pu_disco", 0.0)
+    if disco_w > 0.0:
+        sig = is_particle & (target == 0)
+        if sig.sum() >= 2:
+            score = torch.softmax(ypred["ispu"], dim=-1)[:, 1]  # P(pileup)
+            losses["PU_disco"] = disco_w * _distance_corr(score[sig], input_pt[sig])
+
+    return losses
 
 
 def particle_loss(y, ypred, input_pt, regression_weights, class_weights=None):
     """Compute classification and regression losses over flattened particles."""
     losses = classification_loss(y, ypred, class_weights)
     losses.update(regression_loss(y, ypred, input_pt, regression_weights))
-    losses.update(pu_loss(y, ypred, regression_weights))
+    losses.update(pu_loss(y, ypred, input_pt, regression_weights))
     return losses
 
 
