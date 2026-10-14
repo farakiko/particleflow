@@ -24,7 +24,7 @@ def unpack_target(y, model):
         if i >= 2:  # skip the cls and charge as they are defined above
             ret[feat] = y[..., i].to(dtype=torch.float32)
     ret["phi"] = torch.atan2(ret["sin_phi"], ret["cos_phi"])
-    ret["ispu"] = (ret["ispu"] == 1).to(dtype=torch.float32)
+    ret["ispu"] = (ret["ispu"] >= 0.5).to(dtype=torch.float32)  # pileup if >=0.5 (Training B PU head; see threshold study 2026-10-14)
     # do some sanity checks
     # assert torch.all(ret["pt"] >= 0.0)  # pt
     # assert torch.all(torch.abs(ret["sin_phi"]) <= 1.0)  # sin_phi

@@ -23,6 +23,8 @@ source /shared/envs/mlpf/bin/activate
 cd /shared/particleflow
 
 MODEL=${MODEL:-pyg-cms-phase2-v3-s3-ls}
+PROD=${PROD:-cms_phase2_v3_ngt}                       # production-name in the spec
+DATADIR=${DATADIR:-/shared/mlpf-phase2/tfds_v3}       # tfds dir for this production
 EXP=${EXP:-/shared/mlpf-phase2/experiments/s3ls-prod}
 NSTEPS=${NSTEPS:-2530000}
 GPUS=${GPUS:-1}
@@ -45,8 +47,8 @@ SYNC=$!
 echo "=== ${LOGNAME} start/resume $(date) | model=$MODEL gpus=$GPUS bmult=$BMULT lr=$LR nsteps=$NSTEPS load=${LATEST:-FRESH} ===" | tee -a "$LOG"
 set +e
 python mlpf/pipeline.py --spec-file particleflow_spec.yaml \
-  --model-name "$MODEL" --production-name cms_phase2_v3_ngt \
-  --data-dir /shared/mlpf-phase2/tfds_v3 --experiment-dir "$EXP" \
+  --model-name "$MODEL" --production-name "$PROD" \
+  --data-dir "$DATADIR" --experiment-dir "$EXP" \
   train --gpus "$GPUS" --gpu_batch_multiplier "$BMULT" \
   --num_steps "$NSTEPS" --val_freq "$VALFREQ" --checkpoint_freq "$CKPTFREQ" --nvalid "$NVALID" \
   $LRARG $LOADARG \
