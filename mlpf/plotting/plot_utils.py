@@ -166,6 +166,7 @@ def get_class_names(sample_name):
 
 # overline results in misalignment
 EVALUATION_DATASET_NAMES = {
+    "cms_pf_phase2_ttbar200pu": r"$\mathrm{t}\bar{\mathrm{t}}$ 200 PU (Phase-2)",
     "cld_edm_ttbar_pf": r"$e^+e^- \rightarrow \mathrm{t}\bar{\mathrm{t}}$",
     "cld_edm_qq_pf": r"$e^+e^- \rightarrow \mathrm{q}\bar{\mathrm{q}}$",
     "cld_edm_ww_fullhad_pf": r"$e^+e^- \rightarrow WW \rightarrow \mathrm{hadrons}$",
@@ -269,7 +270,7 @@ def loss_plot(train, test, fname, margin=0.05, smoothing=False, epoch=None, cp_d
 
 
 def format_dataset_name(dataset):
-    return EVALUATION_DATASET_NAMES[dataset]
+    return EVALUATION_DATASET_NAMES.get(dataset, dataset)
 
 
 def midpoints(x):
@@ -359,7 +360,7 @@ EXPERIMENT_LABELS = {
 
 
 def sample_label(ax, sample, additional_text="", x=0.03, y=0.97, fontsize=None):
-    text = EVALUATION_DATASET_NAMES[sample]
+    text = EVALUATION_DATASET_NAMES.get(sample, sample)
     plt.text(x, y, text + additional_text, ha="left", va="top", transform=ax.transAxes, fontsize=fontsize)
 
 

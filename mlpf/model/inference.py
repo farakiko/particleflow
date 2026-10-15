@@ -102,7 +102,7 @@ def predict_one_batch(conv_type, model, i, batch, rank, jetdef, jet_ptcut, jet_m
         msk = ydata["cls_id"] != 0
         # placeholder cut on the PU frac prediction
         if typ == "pred_nopu":
-            msk1 = ydata["ispu"] < 0.8
+            msk1 = ydata["ispu"] < 0.5  # keep non-pileup; matches the training label (ispu>=0.5 = pileup)
             msk = msk & msk1
 
         pt = ydata["pt"][msk]
