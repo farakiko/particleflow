@@ -1,10 +1,12 @@
-# 0PU noGSF heptv2 training (1 MIG slice), to compare with moanwar's heptv2 training:
+# 0PU noGSF heptv2 training (2 MIG slices, DDP), to compare with moanwar's heptv2 training:
 #   kubectl apply -f scripts/phase2/cluster/train_0pu_noGSF.yml
-# Model pyg-cms-phase2-nopu-nogsf-heptv2 = his pyg-cms-ticl-v1 hyperparameters (per-step batch
-# 4 x BMULT 32 = 128 events, lr 4e-4 cosine, 200k steps) on cms_pf_phase2_{ttbar,qcd,zll}_nopu_nogsf.
+# Model pyg-cms-phase2-nopu-nogsf-heptv2 = his pyg-cms-ticl-v1 hyperparameters (per-step batch 128
+# events, lr 4e-4 cosine, 200k steps) on cms_pf_phase2_{ttbar,qcd,zll}_nopu_nogsf.
 # tfds are read from EOS (DATADIR; built by tfds_build_noGSF.yml), so data loading is slower than /shared.
 # Resumable (OnFailure + backoffLimit; resume_train.sh restarts from the latest checkpoint in EXP).
-# Watch the first steps for OOM: batch 128 was his setting on a 48 GB L40, here it is a 12 GB slice.
+# Batch 128 = 2 GPUs x 4 x BMULT 16 (DDP, gradients averaged) = his 1 GPU x 4 x 32. One 12 GB slice
+# with all 128 events peaked at 10.1/11.0 GB in a 200-step smoke test (2026-10-16), too tight for
+# the rare long events; 64 per slice leaves margin. Smoke: ~1.07 s/step on 1 slice, data load not limiting.
 # To restart fresh: delete the Job AND its EXP dir.
 apiVersion: batch/v1
 kind: Job
@@ -35,8 +37,8 @@ spec:
         - {name: DATADIR, value: "/eos/user/f/fmokhtar/mlpf/phase2/tfds"}
         - {name: EXP, value: "/shared/mlpf-phase2/experiments/nopu-nogsf-heptv2"}
         - {name: LOGNAME, value: "nopu_nogsf_heptv2"}
-        - {name: GPUS, value: "1"}
-        - {name: BMULT, value: "32"}
+        - {name: GPUS, value: "2"}
+        - {name: BMULT, value: "16"}
         - {name: NSTEPS, value: "200000"}
         - {name: VALFREQ, value: "10000"}
         - {name: CKPTFREQ, value: "10000"}
@@ -44,6 +46,6 @@ spec:
         volumeMounts: [{name: shared, mountPath: /shared}]
         resources:
           requests: {cpu: "8", memory: "24Gi"}
-          limits: {cpu: "16", memory: "48Gi", nvidia.com/mig-1g.12gb: 1}
+          limits: {cpu: "16", memory: "48Gi", nvidia.com/mig-1g.12gb: 2}
       nodeSelector:
         nvidia.com/gpu.product: NVIDIA-H100-NVL
