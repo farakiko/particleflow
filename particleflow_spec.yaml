@@ -1297,6 +1297,10 @@ models:
     gpu_batch_multiplier: 32
     pad_to_multiple_elements: 200
     num_steps: 200000
+    # tfds on EOS: each worker is I/O-latency bound (~1.7 s per 64-event batch at ~7% CPU), so the
+    # default 2 workers per loader starve the GPU (0.87 s/step vs 0.28 s compute, 2026-10-16).
+    # Batch order comes from the sampler, so this does not change the training.
+    num_workers: 8
 
     hyperparameters:
       batch_size: 4

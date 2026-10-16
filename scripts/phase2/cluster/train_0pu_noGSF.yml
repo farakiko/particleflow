@@ -9,7 +9,10 @@
 # Resumable (OnFailure + backoffLimit; resume_train.sh restarts from the latest checkpoint in EXP).
 # Batch 128 = 2 GPUs x 4 x BMULT 16 (DDP, gradients averaged) = his 1 GPU x 4 x 32. One 12 GB slice
 # with all 128 events peaked at 10.1/11.0 GB in a 200-step smoke test (2026-10-16), too tight for
-# the rare long events; 64 per slice leaves margin. Smoke: ~1.07 s/step on 1 slice, data load not limiting.
+# the rare long events; 64 per slice leaves margin. Smoke: ~1.07 s/step on 1 slice.
+# Reading from EOS is latency bound: with 2 loader workers per rank the first launch ran at 0.87 s/step
+# (0.28 s compute), so the model sets num_workers 8. 2 ranks x (8 train + 8 valid) workers at ~0.7 GB
+# anon each is ~30 GB with the main processes, hence the 64Gi limit.
 # To restart fresh: delete the Job AND its EXP dir.
 apiVersion: batch/v1
 kind: Job
@@ -49,6 +52,6 @@ spec:
         volumeMounts: [{name: shared, mountPath: /shared}]
         resources:
           requests: {cpu: "8", memory: "24Gi"}
-          limits: {cpu: "16", memory: "48Gi", nvidia.com/mig-1g.12gb: 2}
+          limits: {cpu: "16", memory: "64Gi", nvidia.com/mig-1g.12gb: 2}
       nodeSelector:
         nvidia.com/gpu.product: NVIDIA-H100-NVL
