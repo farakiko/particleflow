@@ -1,0 +1,117 @@
+# 0 PU noGSF tfds build -> EOS: cms_pf_phase2_{zll,ttbar,qcd}_nopu_nogsf (CPU only, one pod).
+#   kubectl apply -f scripts/phase2/cluster/tfds_build_noGSF.yml
+#   kubectl logs -f job/pf-tfds-nogsf ; per-config logs in /shared/mlpf-phase2/logs/tfds_nogsf/
+# Same builds as tfds_build_noGSF.sh, but the final tfds lives on EOS (EOS_TFDS), not /shared:
+# each config is built on /shared (fast; tfds' shuffle temp, ~3x the final size, stays off EOS),
+# copied to EOS, checked (same byte count), renamed into place and removed from /shared.
+# Resumable: configs already on EOS are skipped, so after a failure delete the Job and re-apply.
+# EOS outages: the pod lost /eos once mid-build (2026-10-16), failing every remaining config in
+# 2 min. So each wave first waits up to 10 min for EOS; if it stays down the pod exits 4 and the Job
+# retries in a fresh pod (backoffLimit). Configs that still failed get a second pass at the end.
+# EOS_BUDGET_GB caps the total size of EOS_TFDS (the quota had ~175 GB free on 2026-10-16): a wave
+# is not started if it could push past the cap, and the job stops with exit 2 instead.
+# SAMPLES entries are module:wave_width:est_GB_per_config (estimate until a config is measured).
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: pf-tfds-nogsf
+  namespace: fmokhtar
+spec:
+  backoffLimit: 3
+  template:
+    metadata:
+      labels: {home: "eos", mount-eos: "true"}
+    spec:
+      restartPolicy: Never
+      volumes:
+      - name: shared
+        persistentVolumeClaim: {claimName: shared}
+      containers:
+      - name: build
+        image: registry.cern.ch/ngt/pytorch:2.3.1
+        env:
+        - {name: PKL_DIR, value: "/eos/user/f/fmokhtar/mlpf/phase2/data/noGSF"}
+        - {name: EOS_TFDS, value: "/eos/user/f/fmokhtar/mlpf/phase2/tfds"}
+        - {name: EOS_BUDGET_GB, value: "155"}
+        - {name: SAMPLES, value: "zll_nopu_noGSF:5:3 ttbar_nopu_noGSF:3:6 qcd_nopu_noGSF:2:12"}
+        command: ["/bin/bash", "-c"]
+        args:
+        - |
+          set -uo pipefail
+          export HOME=/shared/mlpf-phase2/home PHASE2_PKL_SUBDIR=. PYTHONUNBUFFERED=1
+          source /shared/envs/mlpf/bin/activate
+          cd /shared/particleflow
+          STAGE=/shared/mlpf-phase2/tfds_stage_nogsf
+          LOGS=/shared/mlpf-phase2/logs/tfds_nogsf
+          mkdir -p "$HOME" "$STAGE" "$LOGS" "$EOS_TFDS" || exit 1
+          echo "=== noGSF tfds build $(date) on $(hostname) | repo $(git log --oneline -1) | -> $EOS_TFDS ==="
+          gb() { echo $(( ($1 + 999999999) / 1000000000 )); }
+          nbytes() { find "$1" -type f -printf "%s\n" 2>/dev/null | awk '{s+=$1} END {print s+0}'; }
+          on_eos() { ls "$EOS_TFDS/cms_pf_phase2_${1,,}/$2"/*/dataset_info.json >/dev/null 2>&1; }
+          eos_ok() { [ -n "$(find "$PKL_DIR/$1" -maxdepth 1 -name '*.pkl' -print -quit 2>/dev/null)" ] && [ -d "$EOS_TFDS" ]; }
+          wait_eos() {  # $1 = pkl sample dir; give EOS up to 10 min to come back, else exit 4 (Job retries in a new pod)
+            local t
+            for t in $(seq 1 20); do
+              eos_ok "$1" && return 0
+              echo "EOS not reachable ($t/20) $(date)"; sleep 30
+            done
+            echo "ABORT: EOS unreachable for 10 min $(date)"; exit 4
+          }
+          build_one() {  # $1 = builder module, $2 = config
+            local mod=$1 c=$2 name=cms_pf_phase2_${1,,}
+            local src=$STAGE/$name/$c dst=$EOS_TFDS/$name/$c part=$EOS_TFDS/$name/.$c.partial
+            rm -rf "$src" "$part"
+            if ! tfds build "mlpf/heptfds/cms_pf_phase2/$mod" --config "$c" --manual_dir "$PKL_DIR" \
+                 --data_dir "$STAGE" --overwrite > "$LOGS/${mod}_$c.log" 2>&1; then
+              echo "BUILD FAIL $name/$c (see $LOGS/${mod}_$c.log)"; return 1
+            fi
+            mkdir -p "$part" && cp -r "$src"/. "$part"/ || { echo "COPY FAIL $name/$c"; return 1; }
+            local a b; a=$(nbytes "$src"); b=$(nbytes "$part")
+            if [ "$a" -eq 0 ] || [ "$a" -ne "$b" ]; then echo "SIZE MISMATCH $name/$c stage=$a eos=$b"; return 1; fi
+            mv "$part" "$dst" || { echo "RENAME FAIL $name/$c"; return 1; }
+            rm -rf "$src"
+            echo "config $name/$c OK $(gb $a) GB $(date)"
+          }
+          rc=0
+          for pass in 1 2; do
+            rc=0
+            echo "=== pass $pass $(date) ==="
+            for spec in $SAMPLES; do
+              IFS=: read -r mod width est <<< "$spec"
+              name=cms_pf_phase2_${mod,,}
+              pkl_sample=${mod%%_*}_0pu
+              wait_eos "$pkl_sample"
+              todo=()
+              for c in 1 2 3 4 5 6 7 8 9 10; do
+                if on_eos "$mod" "$c"; then echo "skip $name/$c (already on EOS)"; else todo+=("$c"); fi
+              done
+              i=0
+              while [ $i -lt ${#todo[@]} ]; do
+                wave=("${todo[@]:$i:$width}")
+                wait_eos "$pkl_sample"
+                # per-config estimate: largest config of this sample already on EOS (+15%), else the default
+                m=0
+                for d in "$EOS_TFDS/$name"/[0-9]*; do
+                  [ -d "$d" ] || continue
+                  s=$(nbytes "$d"); [ "$s" -gt "$m" ] && m=$s
+                done
+                [ "$m" -gt 0 ] && est=$(( $(gb $m) * 115 / 100 + 1 ))
+                used=$(gb $(nbytes "$EOS_TFDS")); need=$(( ${#wave[@]} * est ))
+                shared_free=$(df -BG --output=avail /shared | tail -1 | tr -dc 0-9)
+                echo "--- $name wave [${wave[*]}] $(date): est ${est} GB/config, EOS tfds ${used}/${EOS_BUDGET_GB} GB, /shared free ${shared_free} GB"
+                if [ $(( used + need )) -gt "$EOS_BUDGET_GB" ]; then echo "STOP: wave could exceed EOS_BUDGET_GB"; exit 2; fi
+                if [ "$shared_free" -lt $(( 4 * need + 10 )) ]; then echo "STOP: /shared too full for this wave"; exit 3; fi
+                for c in "${wave[@]}"; do build_one "$mod" "$c" & done
+                for p in $(jobs -p); do wait "$p" || rc=1; done
+                i=$(( i + width ))
+              done
+            done
+            [ $rc -eq 0 ] && break
+          done
+          echo "=== done $(date) rc=$rc ==="
+          du -sh --apparent-size "$EOS_TFDS"/cms_pf_phase2_*_nogsf 2>/dev/null
+          exit $rc
+        volumeMounts: [{name: shared, mountPath: /shared}]
+        resources:
+          requests: {cpu: "1", memory: "8Gi"}   # pytorch image -> only 2 large-images nodes; bigger CPU requests stay Pending
+          limits: {cpu: "8", memory: "24Gi"}

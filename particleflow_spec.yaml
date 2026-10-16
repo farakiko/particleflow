@@ -1282,3 +1282,72 @@ models:
       - name: "cms_pf_phase2_ttbar200pu"
         version: "1.0.0"
         splits: ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"]
+
+  # ===========================================================================
+  # 0PU noGSF study: heptv2 with moanwar's hyperparameters (his pyg-cms-ticl-v1 on
+  # Moanwar/particleflow ticl-integration @ f8c9d0dc) on the nano_v2 noGSF target, to compare
+  # with his heptv2 training. Same per-step batch (4 x gpu_batch_multiplier 32 = 128 events),
+  # lr, num_steps, padding and heptv2 shape; the spec defaults (adamw, cosinedecay, bf16, loss
+  # weights) are identical to his. tfds live on EOS: --data-dir /eos/user/f/fmokhtar/mlpf/phase2/tfds
+  # (built by scripts/phase2/cluster/tfds_build_noGSF.yml). Production cms_phase2_ngt.
+  # ---------------------------------------------------------------------------
+  pyg-cms-phase2-nopu-nogsf-heptv2:
+    <<: *defaults
+    dataset: cms_phase2
+    gpu_batch_multiplier: 32
+    pad_to_multiple_elements: 200
+    num_steps: 200000
+
+    hyperparameters:
+      batch_size: 4
+      lr: 0.0004
+
+    architecture:
+      type: "heptv2"
+      input_encoding: "split"
+      backbone: {mode: "split"}   # his code has separate id/reg encoders + conv stacks (= our split backbone)
+      heptv2:
+        num_convs: 3
+        num_heads: 8
+        embedding_dim: 128
+        width: 512
+        block_size: 100
+
+    train_datasets:
+      physical:
+        batch_size: 4
+        samples:
+          - name: "cms_pf_phase2_ttbar_nopu_nogsf"
+            version: "1.0.0"
+            splits: ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"]
+          - name: "cms_pf_phase2_qcd_nopu_nogsf"
+            version: "1.0.0"
+            splits: ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"]
+          - name: "cms_pf_phase2_zll_nopu_nogsf"
+            version: "1.0.0"
+            splits: ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"]
+
+    validation_datasets:
+      physical:
+        batch_size: 1
+        samples:
+          - name: "cms_pf_phase2_ttbar_nopu_nogsf"
+            version: "1.0.0"
+            splits: ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"]
+          - name: "cms_pf_phase2_qcd_nopu_nogsf"
+            version: "1.0.0"
+            splits: ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"]
+          - name: "cms_pf_phase2_zll_nopu_nogsf"
+            version: "1.0.0"
+            splits: ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"]
+
+    test_datasets:
+      - name: "cms_pf_phase2_ttbar_nopu_nogsf"
+        version: "1.0.0"
+        splits: ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"]
+      - name: "cms_pf_phase2_qcd_nopu_nogsf"
+        version: "1.0.0"
+        splits: ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"]
+      - name: "cms_pf_phase2_zll_nopu_nogsf"
+        version: "1.0.0"
+        splits: ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"]

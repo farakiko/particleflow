@@ -1,0 +1,49 @@
+# 0PU noGSF heptv2 training (1 MIG slice), to compare with moanwar's heptv2 training:
+#   kubectl apply -f scripts/phase2/cluster/train_0pu_noGSF.yml
+# Model pyg-cms-phase2-nopu-nogsf-heptv2 = his pyg-cms-ticl-v1 hyperparameters (per-step batch
+# 4 x BMULT 32 = 128 events, lr 4e-4 cosine, 200k steps) on cms_pf_phase2_{ttbar,qcd,zll}_nopu_nogsf.
+# tfds are read from EOS (DATADIR; built by tfds_build_noGSF.yml), so data loading is slower than /shared.
+# Resumable (OnFailure + backoffLimit; resume_train.sh restarts from the latest checkpoint in EXP).
+# Watch the first steps for OOM: batch 128 was his setting on a 48 GB L40, here it is a 12 GB slice.
+# To restart fresh: delete the Job AND its EXP dir.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: pf-nopu-nogsf-heptv2
+  namespace: fmokhtar
+spec:
+  backoffLimit: 20
+  template:
+    metadata:
+      labels: {home: "eos", mount-eos: "true"}
+    spec:
+      restartPolicy: OnFailure
+      volumes:
+      - name: shared
+        persistentVolumeClaim: {claimName: shared}
+      containers:
+      - name: train
+        image: registry.cern.ch/ngt/pytorch:2.3.1
+        command: ["/bin/bash", "-c"]
+        args:
+        - bash /shared/particleflow/scripts/phase2/cluster/resume_train.sh
+        env:
+        - {name: PYTHONUNBUFFERED, value: "1"}
+        - {name: PYTORCH_CUDA_ALLOC_CONF, value: "expandable_segments:True"}
+        - {name: MODEL, value: "pyg-cms-phase2-nopu-nogsf-heptv2"}
+        - {name: PROD, value: "cms_phase2_ngt"}
+        - {name: DATADIR, value: "/eos/user/f/fmokhtar/mlpf/phase2/tfds"}
+        - {name: EXP, value: "/shared/mlpf-phase2/experiments/nopu-nogsf-heptv2"}
+        - {name: LOGNAME, value: "nopu_nogsf_heptv2"}
+        - {name: GPUS, value: "1"}
+        - {name: BMULT, value: "32"}
+        - {name: NSTEPS, value: "200000"}
+        - {name: VALFREQ, value: "10000"}
+        - {name: CKPTFREQ, value: "10000"}
+        - {name: NVALID, value: "50000"}
+        volumeMounts: [{name: shared, mountPath: /shared}]
+        resources:
+          requests: {cpu: "8", memory: "24Gi"}
+          limits: {cpu: "16", memory: "48Gi", nvidia.com/mig-1g.12gb: 1}
+      nodeSelector:
+        nvidia.com/gpu.product: NVIDIA-H100-NVL
