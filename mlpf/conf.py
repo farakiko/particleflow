@@ -630,6 +630,7 @@ class ModelArchitectureConfig(BaseModel):
     trainable: str = "all"
     task_queries: bool = True
     use_pu_head: bool = False  # Training B: add a per-element isPU classification head (enable its loss via regression_loss_weights.ispu)
+    use_global_context: bool = False  # T3: inject event-wide pooled context after the local backbone (GlobalContext)
     backbone: Optional[BackboneConfig] = None
 
     # Nested configs

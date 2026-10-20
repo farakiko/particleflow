@@ -366,6 +366,36 @@ class RegressionOutput(nn.Module):
             return orig_value * a + b
 
 
+class GlobalContext(nn.Module):
+    """Event-wide context on top of the local (LSH) backbone attention (T3).
+
+    Masked attention-pool over all valid elements of an event -> one global vector, broadcast
+    back and fused into every element's representation with a residual connection. This lets a
+    locally-attended element (e.g. a neutral trackster) see event-global information (overall
+    activity / pileup density) that the sub-quadratic local attention cannot reach. O(N) per event.
+    """
+
+    def __init__(self, dim):
+        super().__init__()
+        self.score = nn.Linear(dim, 1)
+        self.proj = nn.Linear(dim, dim)
+        self.fuse = nn.Sequential(nn.Linear(2 * dim, dim), nn.GELU())
+        self.norm = nn.LayerNorm(dim)
+
+    def forward(self, x, mask):
+        # x: (B, S, D); mask: (B, S) with 1 = valid element
+        if mask is None:
+            m = torch.ones(x.shape[:2], device=x.device, dtype=torch.bool)
+        else:
+            m = mask.bool()
+        w = self.score(x).squeeze(-1).masked_fill(~m, float("-inf"))  # (B, S)
+        a = torch.softmax(w, dim=1).unsqueeze(-1)                     # (B, S, 1)
+        g = (a * self.proj(x)).sum(dim=1, keepdim=True)               # (B, 1, D) event-wide
+        g = g.expand(-1, x.shape[1], -1)
+        out = self.norm(x + self.fuse(torch.cat([x, g], dim=-1)))
+        return out * m.unsqueeze(-1).to(out.dtype)
+
+
 class MLPF(nn.Module):
     def __init__(
         self,
@@ -595,6 +625,11 @@ class MLPF(nn.Module):
         # When disabled, forward() keeps the zeros stub so the output tuple is unchanged.
         self.use_pu_head = bool(getattr(self.config, "use_pu_head", False))
         self.nn_ispu = ffn(decoding_dim, 2, width, self.act, head_dropout_ff) if self.use_pu_head else None
+
+        # T3: optional event-wide context injected after the (local) backbone, before the heads.
+        # When disabled, forward() leaves the backbone output unchanged (no behavior change).
+        self.use_global_context = bool(getattr(self.config, "use_global_context", False))
+        self.global_context = GlobalContext(decoding_dim) if self.use_global_context else None
 
         self.nn_pt = RegressionOutput(pt_mode, decoding_dim, width, self.act, head_dropout_ff, regression_selector_values)
         self.nn_eta = RegressionOutput(eta_mode, decoding_dim, width, self.act, head_dropout_ff, regression_selector_values)
@@ -836,10 +871,15 @@ class MLPF(nn.Module):
             embeddings_reg = self._run_backbone(x_reg, mask, x_reg, X_features, backbone=self._backbone_reg)
             final_embedding_cls = self._collect_representation(embeddings_id)
             final_embedding_reg = self._collect_representation(embeddings_reg)
+            if self.global_context is not None:
+                final_embedding_cls = self.global_context(final_embedding_cls, mask)
+                final_embedding_reg = self.global_context(final_embedding_reg, mask)
         else:
             x = self._encode_inputs(X_features, mask=mask)
             backbone_embeddings = self._run_backbone(x, mask, x, X_features)
             final_embedding = self._collect_representation(backbone_embeddings)
+            if self.global_context is not None:
+                final_embedding = self.global_context(final_embedding, mask)
 
             if self.task_queries:
                 final_embedding_cls = self.classification_readout(final_embedding, mask, self.classification_query)
