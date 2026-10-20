@@ -47,6 +47,8 @@ ENDCAP = (1.48, 3.0)
 TYPES = [(1, "chrg_had", "#1f77b4"), (2, "neut_had", "#ff7f0e"), (3, "photon", "#2ca02c"),
          (4, "electron", "#d62728"), (5, "muon", "#9467bd")]
 PT_BINS = np.logspace(0, 2.2, 16)   # truth pT profile bins
+PT_2D = np.logspace(0, 2.2, 25)     # 2D map pT bins (from 1 GeV)
+SCORE_BINS = np.linspace(0, 1, 41)  # 2D map P(pileup) bins
 SIG_C, PU_C = "#1f77b4", "#d62728"  # signal / pileup colours in per-model plots
 
 
@@ -164,6 +166,49 @@ def plot_roc_by_type(d, label, outdir):
     _save(fig, f"{outdir}/roc_by_type_{slug(label)}.pdf")
 
 
+def _colnorm(H):
+    """Normalise each pT column (axis 0) of a 2D histogram to unit area."""
+    s = H.sum(axis=1, keepdims=True); s[s == 0] = 1.0
+    return H / s
+
+
+def plot_score_vs_pt_2d(d, label, outdir):
+    """2D P(pileup) vs truth pT, truth-signal | truth-pileup side by side.
+
+    Each pT column is normalised to unit area, so colour = P(score | pT, class): this shows,
+    at fixed pT, how the head's score is distributed -- directly revealing whether the ~0.5
+    population is low-pT signal (left panel) and/or high-pT pileup (right panel), and the
+    low-pT score spread (the IQR of the median-score curve). White curve = median score."""
+    pu = d["label"] >= 0.5
+    panels = [(~pu, "truth hard scatter"), (pu, "truth pileup")]
+    Hs = [_colnorm(np.histogram2d(d["pt"][sel], d["score"][sel], [PT_2D, SCORE_BINS])[0])
+          for sel, _ in panels]
+    vmax = max(H.max() for H in Hs)
+    fig, axes = plt.subplots(1, 2, figsize=(14, 6.5), sharey=True)
+    pc = None
+    for ax, (sel, ttl), H in zip(axes, panels, Hs):
+        pc = ax.pcolormesh(PT_2D, SCORE_BINS, H.T, cmap="viridis", vmin=0, vmax=vmax)
+        cx, md, lo, hi = profile(d["pt"][sel], d["score"][sel], PT_2D)
+        ax.plot(cx, md, "o-", color="w", lw=2.0, ms=4, label="median")
+        ax.fill_between(cx, lo, hi, color="w", alpha=0.0)  # IQR shown via band below
+        ax.plot(cx, lo, "--", color="w", lw=1.0, alpha=0.7)
+        ax.plot(cx, hi, "--", color="w", lw=1.0, alpha=0.7, label="25-75%")
+        ax.axhline(PU_CUT, color="r", ls=":", lw=1.6)
+        ax.set_xscale("log"); ax.set_xlim(PT_2D[0], PT_2D[-1]); ax.set_ylim(0, 1)
+        ax.set_xlabel(r"truth particle $p_T$ [GeV]")
+        ax.text(0.04, 0.96, ttl, transform=ax.transAxes, fontsize=15, color="w",
+                va="top", fontweight="bold")
+    axes[0].set_ylabel(r"predicted $P(\mathrm{pileup})$")
+    axes[0].legend(fontsize=11, loc="upper right", framealpha=0.3)
+    fig.colorbar(pc, ax=list(axes), label=r"$P(\mathrm{score}\,|\,p_T)$  [column-normalised]", pad=0.02)
+    hep.cms.label(ax=axes[0], data=False, label="Work in Progress", rlabel=RLABEL, fontsize=13)
+    axes[1].text(1.0, 1.01, label, transform=axes[1].transAxes, ha="right", va="bottom",
+                 fontsize=12, style="italic", color="0.30")
+    path = f"{outdir}/puscore_vs_pt_2d_{slug(label)}.pdf"
+    fig.savefig(path, bbox_inches="tight"); plt.close(fig)
+    print("  ->", os.path.relpath(path))
+
+
 def plot_prob_dist(d, label, outdir):
     """P(pileup) distribution, truth signal vs truth pileup, for one model."""
     fig, ax = plt.subplots(figsize=(8, 7)); b = np.linspace(0, 1, 51)
@@ -200,6 +245,7 @@ def main():
     print("plots ...")
     for label, _, _c in MODELS:
         plot_score_vs_pt_permodel(data[label], label, outdir)
+        plot_score_vs_pt_2d(data[label], label, outdir)
         plot_roc_by_type(data[label], label, outdir)
         plot_prob_dist(data[label], label, outdir)
     plot_score_vs_pt_signal(data, outdir)

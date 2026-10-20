@@ -651,6 +651,7 @@ class RegressionLossWeights(BaseModel):
     ispu: float = Field(default=0.0, ge=0.0)       # isPU classification loss weight (0 = off); set >0 with model.use_pu_head=true (Training B)
     pu_disco: float = Field(default=0.0, ge=0.0)   # DisCo pT-decorrelation penalty on the PU score (Training C)
     pu_reweight: float = Field(default=0.0, ge=0.0)  # >0 enables per-pT-bin class-balanced PU loss (Training D)
+    pu_soft: float = Field(default=0.0, ge=0.0)    # >0: regress the continuous hard/PU energy fraction (soft target, T2) instead of binary CE
 
 
 class DatasetSample(BaseModel):

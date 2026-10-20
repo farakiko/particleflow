@@ -24,6 +24,9 @@ def unpack_target(y, model):
         if i >= 2:  # skip the cls and charge as they are defined above
             ret[feat] = y[..., i].to(dtype=torch.float32)
     ret["phi"] = torch.atan2(ret["sin_phi"], ret["cos_phi"])
+    # keep the continuous PU energy fraction in [0,1] (energy-weighted, from postprocessing) for the
+    # soft-target PU head (T2); ret["ispu"] below stays binarized for the binary head / metrics.
+    ret["ispu_raw"] = ret["ispu"].to(dtype=torch.float32).clamp(0.0, 1.0)
     ret["ispu"] = (ret["ispu"] >= 0.5).to(dtype=torch.float32)  # pileup if >=0.5 (Training B PU head; see threshold study 2026-10-14)
     # do some sanity checks
     # assert torch.all(ret["pt"] >= 0.0)  # pt

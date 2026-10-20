@@ -126,11 +126,21 @@ def pu_loss(y, ypred, input_pt, regression_weights):
         return {}
     is_particle = y["cls_id"] != 0
     num_particles = is_particle.sum().clamp_min(1)
-    target = y["ispu"].long()
-    per_element = F.cross_entropy(ypred["ispu"], target, reduction="none")
+    target = y["ispu"].long()  # binarized label, always available (used for reweight / disco)
+
+    # T2: soft target -- regress the continuous hard/PU energy fraction via cross-entropy with
+    # soft labels [1-p, p] on the same 2-logit head. Reduces to the binary CE when p in {0,1}.
+    soft = regression_weights.get("pu_soft", 0.0) > 0.0 and ("ispu_raw" in y)
+    if soft:
+        p = y["ispu_raw"].clamp(0.0, 1.0)
+        logq = F.log_softmax(ypred["ispu"], dim=-1)
+        per_element = -(p * logq[..., 1] + (1.0 - p) * logq[..., 0])
+    else:
+        per_element = F.cross_entropy(ypred["ispu"], target, reduction="none")
 
     # Training D: per-pT-bin class balancing removes the pt shortcut from the CE itself.
-    if regression_weights.get("pu_reweight", 0.0) > 0.0:
+    # (binary-only; with a soft target the continuous fraction already decorrelates from pT.)
+    if (not soft) and regression_weights.get("pu_reweight", 0.0) > 0.0:
         per_element = per_element * _ptbin_class_balance(input_pt, target, is_particle)
 
     per_element = torch.where(is_particle, per_element, torch.zeros_like(per_element))
@@ -168,6 +178,7 @@ def event_loss(y, ypred, batch, regression_weights, class_weights=None):
     particle_targets = {
         "cls_id": y["cls_id"][valid],
         "ispu": y["ispu"][valid],
+        **({"ispu_raw": y["ispu_raw"][valid]} if "ispu_raw" in y else {}),
         **{feature: y[feature][valid] for feature in REGRESSION_FEATURES},
     }
     particle_predictions = {
