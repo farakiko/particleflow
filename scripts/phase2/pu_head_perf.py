@@ -40,6 +40,9 @@ RLABEL = r"$\mathrm{t}\bar{\mathrm{t}}$, 200 PU (14 TeV)"
 MODELS = [
     ("MLPF + PU head",             "ttbar200-heptv2-pu",     "#1f77b4"),
     ("MLPF + pt weighted PU head", "ttbar200-heptv2-pu-rew", "#d62728"),
+    ("MLPF + soft PU head (T2)",   "ttbar200-heptv2-pu-soft", "#9467bd"),
+    ("MLPF + PU head + ctx (T3)",  "ttbar200-heptv2-pu-ctx",  "#8c564b"),
+    ("MLPF + PU head + feats (T1)", "ttbar200-heptv2-pu-feats", "#e377c2"),
 ]
 PU_CUT = 0.5
 ENDCAP = (1.48, 3.0)
@@ -234,13 +237,20 @@ def main():
     os.makedirs(outdir, exist_ok=True)
 
     data = {}
+    present = []
     for label, exp, _c in MODELS:
         print(f"loading {label} ({exp}) ...")
-        d = extract(load(exp, args.preds_root, args.nfiles))
+        try:
+            d = extract(load(exp, args.preds_root, args.nfiles))
+        except FileNotFoundError:
+            print(f"  skip {label}: no preds yet (not trained/evaluated)")
+            continue
         data[label] = d
+        present.append((label, exp, _c))
         _, _, auc = roc(d["score"], d["label"])
         print(f"  {label}: {len(d['score'])} endcap particles, "
               f"pileup frac {d['label'].mean():.3f}, overall AUC {auc:.3f}")
+    MODELS[:] = present  # restrict plots to models whose preds are present
 
     print("plots ...")
     for label, _, _c in MODELS:

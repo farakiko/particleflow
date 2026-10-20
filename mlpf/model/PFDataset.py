@@ -29,8 +29,61 @@ except Exception as e:
     _logger.warning(f"Could not set RLIMIT_NOFILE: {e}")
 
 
+# ----- T1: engineered PUPPI-style input features, computed from the existing X (no reprocess).
+# Appended as the last ENGINEERED_FEATS columns of X when enabled (model.use_engineered_feats).
+# Order: [z_lv, dz_to_lv, alpha_F, alpha_F2, alpha_C]. Validated vs truth in
+# scripts/phase2/feature_puppi_prototype.py. Column indices below are the cms_phase2 X_FEATURES.
+ENGINEERED_FEATS = 5
+_EF_TYP, _EF_PT, _EF_ETA, _EF_SPHI, _EF_CPHI, _EF_VZ = 0, 1, 2, 3, 4, 29
+_EF_ENDCAP = (1.3, 3.2)   # elements used as neighbours / that get alpha (a bit wider than 1.48-3.0)
+_EF_DRMAX, _EF_DZCUT = 0.4, 0.10
+
+
+def _z_lv_peak(typ, pt, vz):
+    """Leading-vertex z = pT^2-weighted mean of tracks in the densest (max sum-pT^2) 1 mm vz bin."""
+    m = (typ == 1) & np.isfinite(vz) & (pt >= 1.0)
+    if m.sum() == 0:
+        return 0.0
+    v = vz[m]; w = pt[m] ** 2
+    edges = np.arange(v.min() - 0.1, v.max() + 0.2, 0.1)
+    if len(edges) < 2:
+        return float(np.average(v, weights=w))
+    idx = np.clip(np.digitize(v, edges) - 1, 0, len(edges) - 2)
+    sums = np.bincount(idx, weights=w, minlength=len(edges) - 1)
+    sel = idx == int(np.argmax(sums))
+    return float(np.average(v[sel], weights=w[sel])) if sel.any() else float(np.average(v, weights=w))
+
+
+def compute_engineered_feats(X):
+    """Per-element [z_lv, dz_to_lv, alpha_F, alpha_F2, alpha_C] from X (cms_phase2 columns).
+    alpha_b = log(1e-3 + sum_{dR<0.4, j!=i} pT_j / dR_ij^b); alpha_C restricts j to LV charged
+    tracks (typ==1 & |vz-z_lv|<DZCUT). Computed over endcap elements; others left at 0."""
+    typ = X[:, _EF_TYP]; pt = X[:, _EF_PT]; eta = X[:, _EF_ETA]; vz = X[:, _EF_VZ]
+    phi = np.arctan2(X[:, _EF_SPHI], X[:, _EF_CPHI])
+    out = np.zeros((len(X), ENGINEERED_FEATS), np.float32)
+    z_lv = _z_lv_peak(typ, pt, vz)
+    dz = np.abs(vz - z_lv)
+    endcap = (typ != 0) & (np.abs(eta) >= _EF_ENDCAP[0]) & (np.abs(eta) <= _EF_ENDCAP[1])
+    out[:, 0] = z_lv
+    out[:, 1] = np.where(typ != 0, dz, 0.0)
+    idx = np.where(endcap)[0]
+    if len(idx) > 1:
+        e = eta[idx]; p = phi[idx]; q = pt[idx]
+        lv = (typ[idx] == 1) & (dz[idx] < _EF_DZCUT)
+        deta = e[:, None] - e[None, :]
+        dphi = np.arctan2(np.sin(p[:, None] - p[None, :]), np.cos(p[:, None] - p[None, :]))
+        dR = np.sqrt(deta ** 2 + dphi ** 2); np.fill_diagonal(dR, 99.0)
+        w = dR < _EF_DRMAX
+        c1 = q[None, :] / np.clip(dR, 1e-3, None)
+        c2 = c1 / np.clip(dR, 1e-3, None)
+        out[idx, 2] = np.log(1e-3 + np.where(w, c1, 0.0).sum(1))
+        out[idx, 3] = np.log(1e-3 + np.where(w, c2, 0.0).sum(1))
+        out[idx, 4] = np.log(1e-3 + np.where(w & lv[None, :], c1, 0.0).sum(1))
+    return out
+
+
 class TFDSDataSource:
-    def __init__(self, ds, sort, pad_to_multiple=None, feature_dim=None):
+    def __init__(self, ds, sort, pad_to_multiple=None, feature_dim=None, engineered_feats=False):
         self.ds = ds
         tmp = self.ds.dataset_info
         self.ds.dataset_info = SimpleNamespace()
@@ -40,6 +93,7 @@ class TFDSDataSource:
         self.sort = sort
         self.pad_to_multiple = pad_to_multiple
         self.feature_dim = feature_dim
+        self.engineered_feats = engineered_feats
 
     def __getitem__(self, item):
         if isinstance(item, int):
@@ -57,6 +111,11 @@ class TFDSDataSource:
 
         Xshape = ret["X"].shape
         _logger.debug(f"Getting item={item}, ds={ds_name}:{self.ds.dataset_info.config_name}, X={Xshape}")
+
+        # T1: compute engineered features from the raw (pre-pad) X and append as the last columns.
+        if self.engineered_feats:
+            ef = compute_engineered_feats(ret["X"])
+            ret["X"] = np.concatenate([ret["X"], ef], axis=1)
 
         if self.feature_dim is not None:
             if ret["X"].shape[1] > self.feature_dim:
@@ -156,7 +215,7 @@ class TFDSDataSource:
 class PFDataset:
     """Builds a DataSource from tensorflow datasets."""
 
-    def __init__(self, data_dir, name, split, num_samples=None, sort=False, pad_to_multiple=512, feature_dim=None):
+    def __init__(self, data_dir, name, split, num_samples=None, sort=False, pad_to_multiple=512, feature_dim=None, engineered_feats=False):
         """
         Args
             data_dir: path to tensorflow_datasets (e.g. `../data/tensorflow_datasets/`)
@@ -183,7 +242,7 @@ class PFDataset:
             split = "train"
 
         _logger.debug(f"PFDataset opening dataset {name} in {builder.data_path} for split {split}")
-        self.ds = TFDSDataSource(builder.as_data_source(split=split), sort=sort, pad_to_multiple=pad_to_multiple, feature_dim=feature_dim)
+        self.ds = TFDSDataSource(builder.as_data_source(split=split), sort=sort, pad_to_multiple=pad_to_multiple, feature_dim=feature_dim, engineered_feats=engineered_feats)
 
         if num_samples and num_samples < len(self.ds):
             self.ds = torch.utils.data.Subset(self.ds, range(num_samples))
@@ -652,6 +711,7 @@ def get_interleaved_dataloaders(world_size, rank, config: MLPFConfig, use_cuda, 
                         sort=config.sort_data,
                         pad_to_multiple=config.pad_to_multiple_elements,
                         feature_dim=config.input_dim,
+                        engineered_feats=bool(getattr(config.model, "use_engineered_feats", False)),
                     ).ds
 
                     if (rank == 0) or (rank == "cpu"):

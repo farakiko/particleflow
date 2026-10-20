@@ -55,6 +55,9 @@ MODELS = [
     ("Baseline MLPF",              "ttbar200-heptv2",         "#2ca02c", "none"),
     ("MLPF + PU head",             "ttbar200-heptv2-pu",      "#1f77b4", "head"),
     ("MLPF + pt weighted PU head", "ttbar200-heptv2-pu-rew",  "#d62728", "head"),
+    ("MLPF + soft PU head (T2)",   "ttbar200-heptv2-pu-soft", "#9467bd", "head"),
+    ("MLPF + PU head + ctx (T3)",  "ttbar200-heptv2-pu-ctx",  "#8c564b", "head"),
+    ("MLPF + PU head + feats (T1)", "ttbar200-heptv2-pu-feats", "#e377c2", "head"),
 ]
 PU_CUT = 0.5
 DR = 0.1
@@ -220,7 +223,8 @@ def plot_sumpt_response(reco_ev, gen_ev, outdir, note):
 def plot_eff_fake(reco_ev, gen_ev, outdir, note, samepid):
     """Efficiency (gen-based) and fake rate (reco-based) vs pT and vs eta, per type."""
     cond = "samePID" if samepid else "anyPID"
-    cond_txt = r"match $\Delta R<%.2f$%s" % (DR, ", same PID" if samepid else "")
+    cond_txt = r"Matching criterion: $\Delta R < %.2f$ with Gen%s" % (DR, ", same PID" if samepid else "")
+    PT_MIN = 1.0  # require particle pT > 1 GeV
     # accumulate per model: counts[model][type][obs] = (num, den) arrays over bins
     PT, ETA = PT_BINS, ETA_BINS
     acc = {lbl: {cid: dict(eff_pt_n=np.zeros(len(PT) - 1), eff_pt_d=np.zeros(len(PT) - 1),
@@ -233,9 +237,12 @@ def plot_eff_fake(reco_ev, gen_ev, outdir, note, samepid):
         g = gen_ev[label]; r = reco_ev[label]; A = acc[label]
         for ev in range(len(g["pt"])):
             ge = ak.to_numpy(g["eta"][ev]); gp = ak.to_numpy(g["phi"][ev])
-            gt = ak.to_numpy(g["type"][ev]); gpt = ak.to_numpy(g["pt"][ev]); gae = np.abs(ge)
+            gt = ak.to_numpy(g["type"][ev]); gpt = ak.to_numpy(g["pt"][ev])
             re = ak.to_numpy(r["eta"][ev]); rp = ak.to_numpy(r["phi"][ev])
-            rt = ak.to_numpy(r["type"][ev]).astype(int); rpt = ak.to_numpy(r["pt"][ev]); rae = np.abs(re)
+            rt = ak.to_numpy(r["type"][ev]).astype(int); rpt = ak.to_numpy(r["pt"][ev])
+            # pT > 1 GeV cut on both gen and reco particles
+            gk = gpt > PT_MIN; ge, gp, gt, gpt = ge[gk], gp[gk], gt[gk], gpt[gk]; gae = np.abs(ge)
+            rk = rpt > PT_MIN; re, rp, rt, rpt = re[rk], rp[rk], rt[rk], rpt[rk]; rae = np.abs(re)
             gm, rm = match_event(ge, gp, gt, re, rp, rt, samepid)
             for cid, _ in TYPES:
                 gsel = gt == cid
@@ -264,8 +271,11 @@ def plot_eff_fake(reco_ev, gen_ev, outdir, note, samepid):
                 if obs == "pt":
                     ax.set_xscale("log")
                 ax.set_ylim(-0.03, 1.08); ax.set_xlabel(xlabel); ax.set_ylabel(f"{ylabel} ({nm})")
-                ax.legend(fontsize=10, title=cond_txt); ax.grid(alpha=0.3)
-                cms_label(ax, note)
+                ax.legend(fontsize=10, title=cond_txt, title_fontsize=9); ax.grid(alpha=0.3)
+                cms_label(ax)
+                if note:  # ideal-mode note goes inside the frame (not as a subtitle)
+                    ax.text(0.5, 0.045, note, transform=ax.transAxes, ha="center", va="bottom",
+                            fontsize=11, style="italic", color="0.30")
                 _save(fig, f"{outdir}/{sub}/{metric}_vs_{obs}_{nm}_{cond}.pdf")
 
 
@@ -401,9 +411,16 @@ def main():
     for label, exp, _c, _m in MODELS:
         print(f"using model: {label} ({exp})")
     a_by_model = {}
+    present = []
     for label, exp, _c, _m in MODELS:
         print(f"loading {label} ({exp}) ...")
-        a_by_model[label] = load(exp, args.preds_root, args.nfiles)
+        try:
+            a_by_model[label] = load(exp, args.preds_root, args.nfiles)
+        except FileNotFoundError:
+            print(f"  skip {label}: no preds yet (not trained/evaluated)")
+            continue
+        present.append((label, exp, _c, _m))
+    MODELS[:] = present  # restrict to models whose preds are present
     for mode in [m.strip() for m in args.modes.split(",") if m.strip()]:
         run_dir(a_by_model, args.out, mode)
     print("\nDONE ->", args.out)

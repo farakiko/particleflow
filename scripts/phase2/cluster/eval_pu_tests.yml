@@ -1,0 +1,30 @@
+# Post-training eval for the PU-mitigation tests: inference (preds_test) + PU eval scripts.
+# Launch once the trainings have checkpoints (ideally finished):
+#   kubectl apply -f scripts/phase2/cluster/eval_pu_tests.yml
+# Override which models via the SPECS env below (expsubdir:model-name:eval-idx, space separated).
+apiVersion: batch/v1
+kind: Job
+metadata: {name: pf-ttbar200-eval, namespace: fmokhtar}
+spec:
+  backoffLimit: 20
+  template:
+    metadata: {labels: {home: "eos", mount-eos: "true"}}
+    spec:
+      restartPolicy: OnFailure
+      volumes: [{name: shared, persistentVolumeClaim: {claimName: shared}}]
+      containers:
+      - name: eval
+        image: registry.cern.ch/ngt/pytorch:2.3.1
+        command: ["/bin/bash", "-c"]
+        args: [bash /shared/particleflow/scripts/phase2/cluster/eval_pu_tests.sh]
+        env:
+        - {name: PYTHONUNBUFFERED, value: "1"}
+        - {name: PYTORCH_CUDA_ALLOC_CONF, value: "expandable_segments:True"}
+        - {name: SPECS, value: "ttbar200-heptv2-pu-soft:pyg-cms-phase2-200pu-heptv2-pu-soft:3 ttbar200-heptv2-pu-ctx:pyg-cms-phase2-200pu-heptv2-pu-ctx:4 ttbar200-heptv2-pu-feats:pyg-cms-phase2-200pu-heptv2-pu-feats:5"}
+        - {name: NTEST, value: "2000"}
+        - {name: NFILES, value: "1000"}
+        volumeMounts: [{name: shared, mountPath: /shared}]
+        resources:
+          requests: {cpu: "8", memory: "24Gi"}
+          limits: {cpu: "16", memory: "48Gi", nvidia.com/mig-1g.12gb: 1}
+      nodeSelector: {nvidia.com/gpu.product: NVIDIA-H100-NVL}
