@@ -30,11 +30,12 @@ hep.style.use("CMS")
 
 # ----------------------------------------------------------------------------- configuration
 RLABEL = r"$\mathrm{t}\bar{\mathrm{t}}$, 200 PU (14 TeV)"
-# (display label, experiment subdir)
+# (display label, experiment subdir, overlay colour)
 MODELS = [
-    ("Baseline MLPF",              "ttbar200-heptv2"),
-    ("MLPF + PU head",             "ttbar200-heptv2-pu"),
-    ("MLPF + pt weighted PU head", "ttbar200-heptv2-pu-rew"),
+    ("MLPF + pt weighted PU head (T0)", "ttbar200-heptv2-pu-rew",  "#d62728"),
+    ("MLPF + PU head + feats (T1)",     "ttbar200-heptv2-pu-feats", "#e377c2"),
+    ("MLPF + soft PU head (T2)",        "ttbar200-heptv2-pu-soft", "#9467bd"),
+    ("MLPF + PU head + ctx (T3)",       "ttbar200-heptv2-pu-ctx",  "#8c564b"),
 ]
 # raw history key -> (pretty title, output filename)
 COMPONENTS = {
@@ -103,7 +104,8 @@ def main():
     ap.add_argument("--steps-per-epoch", type=float, default=4500.0)
     args = ap.parse_args()
 
-    for label, exp in MODELS:
+    overlay = []  # (label, colour, epochs, comps) for the cross-model comparison
+    for label, exp, colour in MODELS:
         exp_dir = f"{args.exp_root}/{exp}"
         if not os.path.isdir(f"{exp_dir}/history"):
             print(f"skip {label}: no history dir"); continue
@@ -116,6 +118,25 @@ def main():
         for key in order:
             title, fname = COMPONENTS.get(key, (key, slug(key)))
             plot_component(epochs, comps[key], title, label, f"{outdir}/{fname}.pdf")
+        overlay.append((label, colour, epochs, comps))
+
+    # cross-model validation-loss overlays (the one-glance comparisons)
+    for comp_key, ylabel, fname in [
+        ("Total", "total validation loss", "total_comparison.pdf"),
+        ("Classification_pu", "pileup-head validation loss", "pu_comparison.pdf"),
+    ]:
+        if not any(comp_key in comps for _, _, _, comps in overlay):
+            continue
+        fig, ax = plt.subplots(figsize=(8, 7))
+        for label, colour, epochs, comps in overlay:
+            if comp_key in comps:
+                ax.plot(epochs, comps[comp_key]["valid"], "o-", color=colour, lw=2.4, ms=5, label=label)
+        ax.set_xlabel("epoch"); ax.set_ylabel(ylabel); ax.grid(alpha=0.3)
+        ax.legend(fontsize=11, title="validation (50k steps)", title_fontsize=11)
+        cms_label(ax)
+        path = f"{args.out}/loss_curves/{fname}"
+        fig.tight_layout(); fig.savefig(path, bbox_inches="tight"); plt.close(fig)
+        print("  ->", os.path.relpath(path))
 
     print("\nDONE ->", f"{args.out}/loss_curves")
 

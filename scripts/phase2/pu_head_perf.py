@@ -152,6 +152,23 @@ def plot_score_vs_pt_signal(data, outdir):
     _save(fig, f"{outdir}/puscore_vs_pt_signal.pdf")
 
 
+def plot_score_vs_pt_pileup(data, outdir):
+    """median P(pileup) vs truth pT for PILEUP particles, all models (rejection vs pT)."""
+    fig, ax = plt.subplots(figsize=(8, 7))
+    for label, _, c in MODELS:
+        d = data[label]; sel = d["label"] == 1
+        cx, md, lo, hi = profile(d["pt"][sel], d["score"][sel], PT_BINS)
+        ax.plot(cx, md, "o-", color=c, lw=2.4, ms=6, label=label)
+        ax.fill_between(cx, lo, hi, color=c, alpha=0.15, lw=0)
+    ax.axhline(PU_CUT, color="k", ls=":", lw=1.5, label=f"cut = {PU_CUT}")
+    ax.set_xscale("log"); ax.set_ylim(-0.03, 1.03)
+    ax.set_xlabel(r"truth particle $p_T$ [GeV]")
+    ax.set_ylabel(r"predicted $P(\mathrm{pileup})$,  pileup particles")
+    ax.legend(fontsize=12, loc="lower left"); ax.grid(alpha=0.3)
+    cms_label(ax, note="higher = more pileup correctly tagged as pileup")
+    _save(fig, f"{outdir}/puscore_vs_pt_pileup.pdf")
+
+
 def plot_roc_by_type(d, label, outdir):
     """ROC (pileup vs signal) per truth particle type, for one model."""
     fig, ax = plt.subplots(figsize=(8, 7))
@@ -259,6 +276,7 @@ def main():
         plot_roc_by_type(data[label], label, outdir)
         plot_prob_dist(data[label], label, outdir)
     plot_score_vs_pt_signal(data, outdir)
+    plot_score_vs_pt_pileup(data, outdir)
 
     print("\nDONE ->", outdir)
 
