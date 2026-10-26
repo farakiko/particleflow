@@ -984,6 +984,7 @@ def run_test(rank, world_size, config: MLPFConfig, outdir, model, sample, testdi
             "test",
             num_samples=ntest,
             pad_to_multiple=config.pad_to_multiple_elements,
+            engineered_feats=bool(getattr(config.model, "use_engineered_feats", False)),
         ).ds
         dataset.append(ds)
     ds = torch.utils.data.ConcatDataset(dataset)
