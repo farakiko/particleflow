@@ -1,0 +1,29 @@
+# Permutation feature-importance for the PU heads -- which input features each head relies on.
+# Run once the clean retrains have progressed (uses the latest checkpoint of each -clean exp):
+#   kubectl apply -f scripts/phase2/cluster/pu_feat_importance.yml
+apiVersion: batch/v1
+kind: Job
+metadata: {name: pf-pu-featimp, namespace: fmokhtar}
+spec:
+  backoffLimit: 20
+  template:
+    metadata: {labels: {home: "eos", mount-eos: "true"}}
+    spec:
+      restartPolicy: OnFailure
+      volumes: [{name: shared, persistentVolumeClaim: {claimName: shared}}]
+      containers:
+      - name: featimp
+        image: registry.cern.ch/ngt/pytorch:2.3.1
+        command: ["/bin/bash", "-c"]
+        args: [bash /shared/particleflow/scripts/phase2/cluster/pu_feat_importance.sh]
+        env:
+        - {name: PYTHONUNBUFFERED, value: "1"}
+        - {name: PYTORCH_CUDA_ALLOC_CONF, value: "expandable_segments:True"}
+        - {name: NEVENTS, value: "500"}
+        - {name: NREPEAT, value: "3"}
+        - {name: NCONFIGS, value: "2"}
+        volumeMounts: [{name: shared, mountPath: /shared}]
+        resources:
+          requests: {cpu: "4", memory: "16Gi"}
+          limits: {cpu: "8", memory: "32Gi", nvidia.com/mig-1g.12gb: 1}
+      nodeSelector: {nvidia.com/gpu.product: NVIDIA-H100-NVL}
