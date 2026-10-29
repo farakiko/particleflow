@@ -1,0 +1,26 @@
+# Inference (preds_test) for the 5 clean-flag PU retrains, on the clean tfds.
+#   kubectl apply -f scripts/phase2/cluster/eval_infer_clean.yml
+apiVersion: batch/v1
+kind: Job
+metadata: {name: pf-eval-infer-clean, namespace: fmokhtar}
+spec:
+  backoffLimit: 20
+  template:
+    metadata: {labels: {home: "eos", mount-eos: "true"}}
+    spec:
+      restartPolicy: OnFailure
+      volumes: [{name: shared, persistentVolumeClaim: {claimName: shared}}]
+      containers:
+      - name: eval
+        image: registry.cern.ch/ngt/pytorch:2.3.1
+        command: ["/bin/bash", "-c"]
+        args: [bash /shared/particleflow/scripts/phase2/cluster/eval_infer_clean.sh]
+        env:
+        - {name: PYTHONUNBUFFERED, value: "1"}
+        - {name: PYTORCH_CUDA_ALLOC_CONF, value: "expandable_segments:True"}
+        - {name: NTEST, value: "2000"}
+        volumeMounts: [{name: shared, mountPath: /shared}]
+        resources:
+          requests: {cpu: "8", memory: "24Gi"}
+          limits: {cpu: "16", memory: "48Gi", nvidia.com/mig-1g.12gb: 1}
+      nodeSelector: {nvidia.com/gpu.product: NVIDIA-H100-NVL}
