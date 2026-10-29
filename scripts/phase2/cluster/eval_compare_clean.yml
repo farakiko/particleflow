@@ -1,0 +1,24 @@
+# Comparison plots for the clean-flag PU retrains (run after eval_infer_clean produced preds_test).
+#   kubectl apply -f scripts/phase2/cluster/eval_compare_clean.yml
+apiVersion: batch/v1
+kind: Job
+metadata: {name: pf-eval-compare-clean, namespace: fmokhtar}
+spec:
+  backoffLimit: 20
+  template:
+    metadata: {labels: {home: "eos", mount-eos: "true"}}
+    spec:
+      restartPolicy: OnFailure
+      volumes: [{name: shared, persistentVolumeClaim: {claimName: shared}}]
+      containers:
+      - name: eval
+        image: registry.cern.ch/ngt/pytorch:2.3.1
+        command: ["/bin/bash", "-c"]
+        args: [bash /shared/particleflow/scripts/phase2/cluster/eval_compare_clean.sh]
+        env:
+        - {name: PYTHONUNBUFFERED, value: "1"}
+        - {name: NFILES, value: "1000"}
+        volumeMounts: [{name: shared, mountPath: /shared}]
+        resources:
+          requests: {cpu: "4", memory: "16Gi"}
+          limits: {cpu: "8", memory: "32Gi"}

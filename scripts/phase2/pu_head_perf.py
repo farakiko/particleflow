@@ -44,6 +44,9 @@ MODELS = [
     ("MLPF + PU head + ctx (T3)",  "ttbar200-heptv2-pu-ctx",  "#8c564b"),
     ("MLPF + PU head + feats (T1)", "ttbar200-heptv2-pu-feats", "#e377c2"),
 ]
+# CLEAN_EXP=1 -> evaluate the clean-flag retrains (append "-clean" to each exp subdir at runtime).
+if os.environ.get("CLEAN_EXP"):
+    MODELS = [(lbl, exp + "-clean", c) for (lbl, exp, c) in MODELS]
 PU_CUT = 0.5
 ENDCAP = (1.48, 3.0)
 # truth class index (cms_phase2 CLASS_LABELS = [0,211,130,22,11,13]) -> (name, colour)
