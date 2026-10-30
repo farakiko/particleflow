@@ -20,5 +20,5 @@ spec:
         - {name: NFILES, value: "1000"}
         volumeMounts: [{name: shared, mountPath: /shared}]
         resources:
-          requests: {cpu: "4", memory: "16Gi"}
+          requests: {cpu: "1", memory: "4Gi"}
           limits: {cpu: "8", memory: "32Gi"}
