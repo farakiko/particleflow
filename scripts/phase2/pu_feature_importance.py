@@ -153,10 +153,16 @@ def cache_batches(data_dir, config, engineered, nevents, batch_size, nconfigs):
 
 
 @torch.no_grad()
-def infer_scores(model, batches, device, perm_cols=None, rng=None):
-    """Run inference over cached batches (optionally permuting perm_cols jointly within each event's
-    real elements) and return flat endcap target-particle arrays: P(pileup), truth ispu, pt, eta, typ."""
+def infer_scores(model, batches, device, perm_cols=None, rng=None, within_type=False):
+    """Run inference over cached batches (optionally permuting perm_cols jointly) and return flat
+    endcap target-particle arrays: P(pileup), truth ispu, pt, eta, typ.
+
+    within_type=True shuffles the feature only among real elements of the SAME typ_idx (trackster
+    feature among tracksters, track feature among tracks), so permuting a type-specific feature does
+    not also leak element type (e.g. "time==0 -> track"). The type-defining column 0 (typ_idx) is
+    always permuted globally, since a within-type shuffle of it is a no-op."""
     sc, lab, pt, eta, typ = [], [], [], [], []
+    wt = within_type and perm_cols is not None and 0 not in perm_cols
     for b in batches:
         X = b.X.clone()
         mask = X[:, :, 0] != 0  # padding mask (real elements)
@@ -165,9 +171,17 @@ def infer_scores(model, batches, device, perm_cols=None, rng=None):
                 idx = torch.nonzero(mask[r], as_tuple=False).flatten()
                 if idx.numel() < 2:
                     continue
-                perm = idx[torch.as_tensor(rng.permutation(idx.numel()))]
-                for c in perm_cols:
-                    X[r, idx, c] = X[r, perm, c]
+                # groups of element indices to permute within: per typ_idx if within_type, else all
+                if wt:
+                    groups = [idx[X[r, idx, 0] == tv] for tv in torch.unique(X[r, idx, 0])]
+                else:
+                    groups = [idx]
+                for g in groups:
+                    if g.numel() < 2:
+                        continue
+                    perm = g[torch.as_tensor(rng.permutation(g.numel()))]
+                    for c in perm_cols:
+                        X[r, g, c] = X[r, perm, c]
         Xd, md = X.to(device), mask.to(device)
         preds_pu = model(Xd, md)[3]  # (B, N, 2) raw logits
         prob = torch.softmax(preds_pu.float(), dim=-1)[:, :, 1].cpu()  # P(pileup)
@@ -207,7 +221,7 @@ def run_model(label, exp_dir, engineered, args, device):
         drops = []
         for r in range(args.nrepeat):
             rng = np.random.default_rng(args.seed + 1000 * j + r)
-            s = infer_scores(model, batches, device, perm_cols=[j], rng=rng)
+            s = infer_scores(model, batches, device, perm_cols=[j], rng=rng, within_type=args.within_type)
             drops.append(base_auc - auc_score(s[0], s[1]))
         drop_mean[j], drop_std[j] = np.mean(drops), np.std(drops)
         print(f"    [{j:2d}] {feats[j]:<18s}  drop = {drop_mean[j]:+.4f} +- {drop_std[j]:.4f}")
@@ -223,13 +237,13 @@ def run_model(label, exp_dir, engineered, args, device):
             drops = []
             for r in range(args.nrepeat):
                 rng = np.random.default_rng(args.seed + 7777 + r)
-                s = infer_scores(model, batches, device, perm_cols=cols, rng=rng)
+                s = infer_scores(model, batches, device, perm_cols=cols, rng=rng, within_type=args.within_type)
                 drops.append(base_auc - auc_score(s[0], s[1]))
             group_drop[gname] = [float(np.mean(drops)), float(np.std(drops))]
             print(f"    (group) {gname:<22s}  drop = {np.mean(drops):+.4f} +- {np.std(drops):.4f}")
 
     return dict(label=label, exp=os.path.basename(exp_dir), step=step, engineered=engineered,
-                feats=feats, base_auc=base_auc, n_particles=int(npart),
+                within_type=bool(args.within_type), feats=feats, base_auc=base_auc, n_particles=int(npart),
                 drop_mean=drop_mean.tolist(), drop_std=drop_std.tolist(), group_drop=group_drop)
 
 
@@ -310,6 +324,9 @@ def main():
     ap.add_argument("--batch-size", type=int, default=8)
     ap.add_argument("--topn", type=int, default=25, help="features shown in per-model bar chart")
     ap.add_argument("--groups", action="store_true", help="also run grouped (correlated) permutation")
+    ap.add_argument("--within-type", action="store_true",
+                    help="shuffle each feature only among elements of the same typ_idx (avoids leaking "
+                         "element type via type-specific features like time/vz); typ_idx stays global")
     ap.add_argument("--models", default="", help="comma-separated MODELS indices to keep (default: all)")
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
