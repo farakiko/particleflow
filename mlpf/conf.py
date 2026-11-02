@@ -632,6 +632,7 @@ class ModelArchitectureConfig(BaseModel):
     use_pu_head: bool = False  # Training B: add a per-element isPU classification head (enable its loss via regression_loss_weights.ispu)
     use_global_context: bool = False  # T3: inject event-wide pooled context after the local backbone (GlobalContext)
     use_engineered_feats: bool = False  # T1: append PUPPI-style features (computed from X in the dataloader); input_dim += 5
+    use_logpt_feat: bool = False  # append a single log(element pt) column in the dataloader; input_dim += 1
     backbone: Optional[BackboneConfig] = None
 
     # Nested configs
@@ -767,6 +768,8 @@ class MLPFConfig(BaseModel):
                 self.input_dim = len(X_FEATURES[self.dataset.value])
                 if getattr(self.model, "use_engineered_feats", False):
                     self.input_dim += 5  # T1: PFDataset appends ENGINEERED_FEATS engineered columns
+                if getattr(self.model, "use_logpt_feat", False):
+                    self.input_dim += 1  # PFDataset appends a single log(pt) column
             if self.num_classes is None:
                 self.num_classes = len(CLASS_LABELS[self.dataset.value])
             if self.elemtypes_nonzero is None:
@@ -838,6 +841,8 @@ class MLPFConfig(BaseModel):
         config_dict["input_dim"] = len(X_FEATURES[ds_name])
         if config_dict["model"].get("use_engineered_feats", False):
             config_dict["input_dim"] += 5  # T1: PFDataset appends ENGINEERED_FEATS engineered columns
+        if config_dict["model"].get("use_logpt_feat", False):
+            config_dict["input_dim"] += 1  # PFDataset appends a single log(pt) column
         config_dict["num_classes"] = len(CLASS_LABELS[ds_name])
         config_dict["elemtypes_nonzero"] = ELEM_TYPES_NONZERO[ds_name]
 

@@ -83,7 +83,7 @@ def compute_engineered_feats(X):
 
 
 class TFDSDataSource:
-    def __init__(self, ds, sort, pad_to_multiple=None, feature_dim=None, engineered_feats=False):
+    def __init__(self, ds, sort, pad_to_multiple=None, feature_dim=None, engineered_feats=False, logpt_feat=False):
         self.ds = ds
         tmp = self.ds.dataset_info
         self.ds.dataset_info = SimpleNamespace()
@@ -94,6 +94,7 @@ class TFDSDataSource:
         self.pad_to_multiple = pad_to_multiple
         self.feature_dim = feature_dim
         self.engineered_feats = engineered_feats
+        self.logpt_feat = logpt_feat
 
     def __getitem__(self, item):
         if isinstance(item, int):
@@ -116,6 +117,11 @@ class TFDSDataSource:
         if self.engineered_feats:
             ef = compute_engineered_feats(ret["X"])
             ret["X"] = np.concatenate([ret["X"], ef], axis=1)
+
+        # append a single log(element pt) column (pt is X[:, 1]); floored to avoid log(0) on padding/zeros
+        if self.logpt_feat:
+            logpt = np.log(np.clip(ret["X"][:, 1:2], 1e-3, None)).astype(ret["X"].dtype)
+            ret["X"] = np.concatenate([ret["X"], logpt], axis=1)
 
         if self.feature_dim is not None:
             if ret["X"].shape[1] > self.feature_dim:
@@ -215,7 +221,9 @@ class TFDSDataSource:
 class PFDataset:
     """Builds a DataSource from tensorflow datasets."""
 
-    def __init__(self, data_dir, name, split, num_samples=None, sort=False, pad_to_multiple=512, feature_dim=None, engineered_feats=False):
+    def __init__(
+        self, data_dir, name, split, num_samples=None, sort=False, pad_to_multiple=512, feature_dim=None, engineered_feats=False, logpt_feat=False
+    ):
         """
         Args
             data_dir: path to tensorflow_datasets (e.g. `../data/tensorflow_datasets/`)
@@ -242,7 +250,14 @@ class PFDataset:
             split = "train"
 
         _logger.debug(f"PFDataset opening dataset {name} in {builder.data_path} for split {split}")
-        self.ds = TFDSDataSource(builder.as_data_source(split=split), sort=sort, pad_to_multiple=pad_to_multiple, feature_dim=feature_dim, engineered_feats=engineered_feats)
+        self.ds = TFDSDataSource(
+            builder.as_data_source(split=split),
+            sort=sort,
+            pad_to_multiple=pad_to_multiple,
+            feature_dim=feature_dim,
+            engineered_feats=engineered_feats,
+            logpt_feat=logpt_feat,
+        )
 
         if num_samples and num_samples < len(self.ds):
             self.ds = torch.utils.data.Subset(self.ds, range(num_samples))
@@ -712,6 +727,7 @@ def get_interleaved_dataloaders(world_size, rank, config: MLPFConfig, use_cuda, 
                         pad_to_multiple=config.pad_to_multiple_elements,
                         feature_dim=config.input_dim,
                         engineered_feats=bool(getattr(config.model, "use_engineered_feats", False)),
+                        logpt_feat=bool(getattr(config.model, "use_logpt_feat", False)),
                     ).ds
 
                     if (rank == 0) or (rank == "cpu"):
