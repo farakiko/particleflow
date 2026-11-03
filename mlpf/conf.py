@@ -729,6 +729,10 @@ class MLPFConfig(BaseModel):
     load: Optional[str] = None  # path to model and optimizer checkpoint to load
     relaxed_load: bool = False  # if enabled, skip layer mismatch and optimizer in loading
     sampler_from_scratch: bool = False  # start the sampler from scratch (without resuming the sampler state)
+    # On resume, ignore the checkpoint's LR-schedule state and instead position a fresh num_steps-long
+    # schedule at the resume step (used to extend a finished cosine-decay training past its original
+    # num_steps without the schedule bouncing back to peak LR). Only meaningful together with --load.
+    reset_lr_schedule: bool = False
 
     # Logging
     comet: bool = False

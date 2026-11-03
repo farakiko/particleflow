@@ -16,6 +16,8 @@
 #   CKPTFREQ   steps between checkpoints              (default 10000)
 #   NVALID     events per validation                  (default 50000)
 #   LOGNAME    log basename under logs/               (default s3ls_prod)
+#   RESETLR    set to 1 to reset the LR schedule on resume (extend a finished run past its orig
+#              num_steps: position a fresh num_steps schedule at the resume step)  (default off)
 set -uo pipefail
 export HOME=/shared/mlpf-phase2/home
 export PYTORCH_CUDA_ALLOC_CONF=${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}
@@ -31,6 +33,8 @@ GPUS=${GPUS:-1}
 BMULT=${BMULT:-2}
 LR=${LR:-}
 LRARG=""; [ -n "$LR" ] && LRARG="--hyperparameters.lr $LR"
+RESETLR=${RESETLR:-}                                 # set to 1 to reset LR schedule on resume (extend past orig num_steps)
+RESETARG=""; [ -n "$RESETLR" ] && RESETARG="--reset-lr-schedule"
 VALFREQ=${VALFREQ:-10000}
 CKPTFREQ=${CKPTFREQ:-10000}
 NVALID=${NVALID:-50000}
@@ -51,7 +55,7 @@ python mlpf/pipeline.py --spec-file particleflow_spec.yaml \
   --data-dir "$DATADIR" --experiment-dir "$EXP" \
   train --gpus "$GPUS" --gpu_batch_multiplier "$BMULT" \
   --num_steps "$NSTEPS" --val_freq "$VALFREQ" --checkpoint_freq "$CKPTFREQ" --nvalid "$NVALID" \
-  $LRARG $LOADARG \
+  $LRARG $LOADARG $RESETARG \
   2>&1 | tee -a "$LOG"
 rc=${PIPESTATUS[0]}   # python's exit code, NOT tee's
 kill "$SYNC" 2>/dev/null || true

@@ -1,0 +1,44 @@
+# Extend T0 (pu-rew, our PU benchmark) from its finished 50k-step clean run to 100k steps.
+# The original cosine LR already annealed to its 4e-5 floor by step 50k, so RESETLR=1 makes
+# resume_train.sh pass --reset-lr-schedule: keep the 50k weights + Adam moments, but position a
+# FRESH 100k-step cosine at the resume point (LR bumps to ~2.2e-4 and anneals back to the floor
+# by 100k) instead of reloading the old T_max=50k schedule (which would bounce LR back to peak).
+# Same exp dir, so resume_train.sh auto-loads checkpoint-50000.pth. Eval PU AUC at 50/75/100k.
+# Launch (after git pull on the cluster checkout):
+#   kubectl apply -f scripts/phase2/cluster/train_200pu_t0_resume.yml
+---
+apiVersion: batch/v1
+kind: Job
+metadata: {name: pf-ttbar200-rew-clean-ext, namespace: fmokhtar}
+spec:
+  backoffLimit: 50
+  template:
+    metadata: {labels: {home: "eos", mount-eos: "true"}}
+    spec:
+      restartPolicy: OnFailure
+      volumes: [{name: shared, persistentVolumeClaim: {claimName: shared}}]
+      containers:
+      - name: train
+        image: registry.cern.ch/ngt/pytorch:2.3.1
+        command: ["/bin/bash", "-c"]
+        args: [bash /shared/particleflow/scripts/phase2/cluster/resume_train.sh]
+        env:
+        - {name: PYTHONUNBUFFERED, value: "1"}
+        - {name: PYTORCH_CUDA_ALLOC_CONF, value: "expandable_segments:True"}
+        - {name: MODEL, value: "pyg-cms-phase2-200pu-heptv2-pu-rew"}
+        - {name: PROD, value: "cms_phase2_ngt"}
+        - {name: DATADIR, value: "/shared/mlpf-phase2/tfds_clean"}
+        - {name: EXP, value: "/shared/mlpf-phase2/experiments/ttbar200-heptv2-pu-rew-clean"}
+        - {name: LOGNAME, value: "ttbar200_heptv2_pu_rew_clean_ext"}
+        - {name: RESETLR, value: "1"}
+        - {name: GPUS, value: "1"}
+        - {name: BMULT, value: "1"}
+        - {name: NSTEPS, value: "100000"}
+        - {name: VALFREQ, value: "2500"}
+        - {name: CKPTFREQ, value: "2500"}
+        - {name: NVALID, value: "2000"}
+        volumeMounts: [{name: shared, mountPath: /shared}]
+        resources:
+          requests: {cpu: "8", memory: "24Gi"}
+          limits: {cpu: "16", memory: "48Gi", nvidia.com/mig-1g.12gb: 1}
+      nodeSelector: {nvidia.com/gpu.product: NVIDIA-H100-NVL}

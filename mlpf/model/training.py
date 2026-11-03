@@ -33,6 +33,7 @@ Key Functions:
 import os
 import os.path as osp
 import time
+import math
 import logging
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -1110,8 +1111,29 @@ def run(rank: int | str, world_size: int, config: MLPFConfig, outdir: str, logfi
         _logger.info("Loaded model weights from {}".format(config.load), color="bold")
         _logger.info(f"Restoring training from step {start_step}")
 
-        load_lr_schedule(lr_schedule, checkpoint, start_step=start_step)
-        model, optimizer = load_checkpoint(checkpoint, model, optimizer, strict)
+        if getattr(config, "reset_lr_schedule", False):
+            # Extend a finished training past its original num_steps: keep the model weights and the
+            # optimizer (Adam moments) from the checkpoint, but DISCARD the checkpoint's LR schedule.
+            # Instead position the freshly-built num_steps-long schedule at the resume step, so a
+            # cosine that already annealed to its floor keeps annealing over the new, longer horizon
+            # rather than reloading the old (shorter) T_max and bouncing back to peak LR.
+            model, optimizer = load_checkpoint(checkpoint, model, optimizer, strict)
+            lr_schedule.last_epoch = start_step - 1
+            eta_min = getattr(lr_schedule, "eta_min", 0.0)
+            t_max = getattr(lr_schedule, "T_max", config.num_steps)
+            # closed-form cosine LR at the resume step; sets param-group lr so the recursive
+            # CosineAnnealingLR continues consistently from here (no-op shape for other schedules)
+            for base_lr, group in zip(getattr(lr_schedule, "base_lrs", []), optimizer.param_groups):
+                group["lr"] = eta_min + (base_lr - eta_min) * (1 + math.cos(math.pi * (start_step - 1) / t_max)) / 2
+            lr_now = optimizer.param_groups[0]["lr"] if optimizer.param_groups else float("nan")
+            _logger.info(
+                f"reset_lr_schedule: fresh schedule over {config.num_steps} steps positioned at step "
+                f"{start_step - 1} (T_max={t_max}), lr={lr_now:.3e}",
+                color="bold",
+            )
+        else:
+            load_lr_schedule(lr_schedule, checkpoint, start_step=start_step)
+            model, optimizer = load_checkpoint(checkpoint, model, optimizer, strict)
 
     if config.compile:
         _logger.info("Compiling model")

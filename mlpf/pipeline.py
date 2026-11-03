@@ -128,6 +128,12 @@ def get_parser():
     common_parser = argparse.ArgumentParser(add_help=False)
     common_parser.add_argument("--gpus", type=int, default=None, help="Number of GPUs to use. Set to 0 for CPU.")
     common_parser.add_argument("--load", type=str, default=None, help="Load a checkpoint")
+    common_parser.add_argument(
+        "--reset-lr-schedule",
+        dest="reset_lr_schedule",
+        action="store_true",
+        help="On resume, ignore the checkpoint LR schedule and position a fresh num_steps schedule at the resume step",
+    )
     common_parser.add_argument("--compile", action="store_true", help="Compile the model (Torch 2.0+)")
     common_parser.add_argument("--comet", action="store_true", help="Use comet.ml logging")
     common_parser.add_argument("--comet-offline", action="store_true", help="Save comet logs locally")
