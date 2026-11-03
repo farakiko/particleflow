@@ -5,7 +5,7 @@ Exploratory analysis of the TICL postprocessed pkl outputs (per-event dicts with
 Requires `uproot numpy awkward matplotlib fastjet` (fastjet only for the jet
 clustering of `ycand`). All take `--dir <pkl_output>` and parallelize over files.
 
-Data: `data/cms/phase2/offline/Aug31/nano/pkl_output/` (QCD / ttbar / Z→ll, 0 PU).
+Data: `data/cms/phase2/offline/pkl/` (QCD / ttbar / Z→ll, 0 PU).
 
 | script | what it does |
 |---|---|
@@ -17,7 +17,7 @@ Data: `data/cms/phase2/offline/Aug31/nano/pkl_output/` (QCD / ttbar / Z→ll, 0 
 Example:
 ```
 python scripts/phase2/jet_response_cms.py \
-    --dir data/cms/phase2/offline/Aug31/nano/pkl_output \
+    --dir data/cms/phase2/offline/pkl \
     --outdir plots/phase2 --per-sample 250
 ```
 

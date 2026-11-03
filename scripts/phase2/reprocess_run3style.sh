@@ -6,14 +6,14 @@
 #
 #   PY      python interpreter with uproot/awkward/numpy/fastjet (default: python)
 #   REPO    repo root (default: auto-detected from this script's location)
-#   NANO    dir containing <sample>/*.root (default: $REPO/data/cms/phase2/offline/Aug31/nano)
+#   NANO    dir containing <sample>/*.root (default: $REPO/data/cms/phase2/offline/nano)
 #   SAMPLES space-separated sample subdirs (default: ttbar_0pu qcd_0pu zll_0pu)
 #   NPROC   parallel workers (default: 6)
 set -u
 PY=${PY:-python}
 REPO=${REPO:-$(cd "$(dirname "$0")/../.." && pwd)}
 SCRIPT=$REPO/scripts/phase2/postprocessing_run3style.py
-NANO=${NANO:-$REPO/data/cms/phase2/offline/Aug31/nano}
+NANO=${NANO:-$REPO/data/cms/phase2/offline/nano}
 SAMPLES=${SAMPLES:-"ttbar_0pu qcd_0pu zll_0pu"}
 NPROC=${NPROC:-6}
 

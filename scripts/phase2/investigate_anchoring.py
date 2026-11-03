@@ -19,7 +19,7 @@ SENTINEL = -2147483648
 CHARGED_PIDS = {11, 13, 211, 321}
 TS  = "ticlTrackstersCLUE3DHigh"
 S2R = "SimCP2ticlTrackstersCLUE3DHighByHits"
-NANO = "/Users/fmokhtar/projects/particleflow/data/cms/phase2/offline/Aug31/nano"
+NANO = "/Users/fmokhtar/projects/particleflow/data/cms/phase2/offline/nano"
 
 BRANCHES = [
     "SimTICLCandidates_pdgID", "SimTICLCandidates_energy", "SimTICLCandidates_raw_energy",

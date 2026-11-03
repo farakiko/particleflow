@@ -7,7 +7,7 @@ import glob, argparse
 import numpy as np, awkward as ak, uproot
 
 SENTINEL = -2147483648
-NANO = "/Users/fmokhtar/projects/particleflow/data/cms/phase2/offline/Aug31/nano"
+NANO = "/Users/fmokhtar/projects/particleflow/data/cms/phase2/offline/nano"
 BR = ["SimTICLCandidates_pdgID", "SimTICLCandidates_trackIdx", "SimTICLCandidates_pt",
       "SimTICLCandidates_eta", "SimTICLCandidates_energy", "GeneralTrack_pt"]
 

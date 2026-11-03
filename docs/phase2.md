@@ -4,11 +4,43 @@ Adapting CMS MLPF from Run 3 to the **Phase-2 / HL-LHC endcap**, using
 **tracks + TICL tracksters** (HGCAL) as inputs instead of Run-3 PF clusters.
 Claims are **[VERIFIED]** (checked in data/code) unless marked **[OPEN]**.
 
+> ## 📌 PINNED TODO: fix the nano_v2 postprocessing inputs and labels (found 2026-10-19)
+>
+> All four items concern `scripts/phase2/postprocessing_ticl_nopu_nano_v2.py` (and the `_noGSF` copy).
+> Fixing them needs a postprocessing re-run plus a tfds rebuild, so do them together.
+>
+> 1. **Track φ = −999 [VERIFIED].**
+>    - `track_phi` is `GeneralTrack_hgcal_phi`: the φ of the position where the track reaches the HGCAL first disk,
+>      propagated from the outermost track state. When that propagation fails, CMSSW stores −999.
+>    - This hits 10.7% (0 PU) and 14.5% (200 PU) of track inputs: soft tracks, pT < 1 GeV, almost never a target.
+>    - The model sees sin/cos(−999), i.e. every one of them points at φ ≈ −0.026 with px ≈ pT. It is a sentinel
+>      shortcut, not physics.
+>    - **Fix:** fall back to the unextrapolated values (`GeneralTrack_phi`/`eta`) when the extrapolation fails.
+> 2. **Track direction is mixed [VERIFIED].** `eta` is the vertex η but `phi` is the HGCAL-position φ. The median
+>    difference is about 0.5 rad, and 0.6 rad below 2 GeV; `px`/`py` are built from it.
+>    - **Fix:** take kinematics (η, φ, px, py, pz) at the vertex. Add the HGCAL position (`hgcal_eta`, `hgcal_phi`)
+>      as separate features, using the vertex values when extrapolation fails.
+>    - `etaerror` duplicates `lambdaerror` exactly (etaErr = lambdaErr / cos λ); one of them can be dropped.
+> 3. **`SimTICLCandidates_isPU` = −1 is a CMSSW bug [VERIFIED].**
+>    - −1 means the lookup in `TICLCandidateExtraTableProducer.cc` failed. It affects about 15% of candidates
+>      even at 0 PU, all of them signal.
+>    - About 28% of the resolved 0/1 values come from the wrong CaloParticle.
+>    - At 200 PU, 9.7% of signal candidates are −1 and 2.0% are wrongly flagged 1.
+>    - **Fix:** read `ticlSimTrackstersfromCPs_isPU` instead. It is index-aligned 1:1 with the candidates (checked by
+>      counts and by the kinematics of neutral candidates) and only takes 0/1.
+> 4. **Remove the `isPU == -1` drop rule** (around line 1308). It drops input elements, so at 0 PU it removes the
+>    elements of about 15% of signal candidates. This likely affected the noGSF 0 PU target as well [OPEN: check the
+>    EOS pkls]. With fix 3 there are no −1 values left. It also produces meaningless energy-weighted target `ispu`
+>    averages whenever a −1 is mixed in.
+>
+> Also report the CMSSW bugs upstream: the isPU / `caloParticleIdx` lookup and the `eVector0` y↔z swap
+> (see `CLAUDE.md`, NanoAOD quirks).
+
 ---
 
 ## 1. Data & layout
 
-`data/cms/phase2/offline/Aug31/nano/`
+`data/cms/phase2/offline/nano/`
 - `ttbar_0pu/` — raw Phase-2 **NanoAOD** (ttbar, 0 PU): **100 valid files** (~30k events).
   TICL-focused NanoAOD, 484 branches; calo side is **endcap-only** (no barrel calo).
   - `pkl_run3style/` — our Run3-style target (§4A)

@@ -20,7 +20,7 @@ from mlpf.model.mlpf import MLPF
 from mlpf.model.utils import unpack_predictions
 import cms_phase2_utils as adapter
 
-NANO = os.path.join(REPO, "data/cms/phase2/offline/Aug31/nano")
+NANO = os.path.join(REPO, "data/cms/phase2/offline/nano")
 CLS = CLASS_LABELS[Dataset.CMS_PHASE2.value]          # [0,211,130,22,11,13]
 NHAD = {130, 310, 2112, 3122, 3322, 3212, 421, 511}
 CLASSES = ["photon", "nhad", "chad", "electron", "muon"]

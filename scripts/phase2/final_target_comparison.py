@@ -15,7 +15,7 @@ import os, glob, pickle, argparse
 import numpy as np
 import matplotlib; matplotlib.use("Agg"); import matplotlib.pyplot as plt
 
-NANO = "/Users/fmokhtar/projects/particleflow/data/cms/phase2/offline/Aug31/nano"
+NANO = "/Users/fmokhtar/projects/particleflow/data/cms/phase2/offline/nano"
 NHAD = {130, 310, 2112, 3122, 3322, 3212, 421, 511}
 NEUTR = {12, 14, 16}
 CLASSES = ["photon", "nhad", "chad", "electron", "muon"]

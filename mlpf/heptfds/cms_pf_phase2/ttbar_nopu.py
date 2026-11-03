@@ -9,9 +9,9 @@ from mlpf.conf import Y_FEATURES  # noqa: E402
 
 _DESCRIPTION = "CMS Phase-2 HGCAL/TICL NanoAOD, Run3-style target (tracks + CLUE3D tracksters). ttbar 0 PU."
 _CITATION = ""
-# local layout: <manual_dir>/ttbar_0pu/pkl_run3style/*.pkl ; eos production layout
-# (pkl_links_v2): <manual_dir>/ttbar_0pu/*.pkl -> set PHASE2_PKL_SUBDIR=.
-_SAMPLE_DIR = os.path.normpath(os.path.join("ttbar_0pu", os.environ.get("PHASE2_PKL_SUBDIR", "pkl_run3style")))
+# layout: <manual_dir>/ttbar_0pu/*.pkl  (manual_dir = data/cms/phase2/offline/pkl, v2 ticl_ pkls).
+# Override the subdir with PHASE2_PKL_SUBDIR if the pkls live one level deeper.
+_SAMPLE_DIR = os.path.normpath(os.path.join("ttbar_0pu", os.environ.get("PHASE2_PKL_SUBDIR", ".")))
 _CLASS_NAME = "CmsPfPhase2TtbarNopu"
 
 
@@ -20,7 +20,7 @@ class CmsPfPhase2TtbarNopu(tfds.core.GeneratorBasedBuilder):
 
     VERSION = tfds.core.Version(os.environ.get("TFDS_VERSION", "1.0.0"))
     RELEASE_NOTES = {"1.0.0": "First Phase-2 Run3-style target"}
-    MANUAL_DOWNLOAD_INSTRUCTIONS = "Point --manual_dir at data/cms/phase2/offline/Aug31/nano"
+    MANUAL_DOWNLOAD_INSTRUCTIONS = "Point --manual_dir at data/cms/phase2/offline/pkl"
     BUILDER_CONFIGS = [tfds.core.BuilderConfig(name=str(g)) for g in range(1, cms_phase2_utils.NUM_SPLITS + 1)]
 
     def __init__(self, *args, **kwargs):

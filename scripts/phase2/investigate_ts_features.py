@@ -17,7 +17,7 @@ import matplotlib; matplotlib.use("Agg"); import matplotlib.pyplot as plt
 
 TS  = "ticlTrackstersCLUE3DHigh"
 S2R = "SimCP2ticlTrackstersCLUE3DHighByHits"
-NANO = "/Users/fmokhtar/projects/particleflow/data/cms/phase2/offline/Aug31/nano"
+NANO = "/Users/fmokhtar/projects/particleflow/data/cms/phase2/offline/nano"
 BR = ["SimTICLCandidates_pdgID", "SimTICLCandidates_energy",
       f"{S2R}_n{S2R}Links", f"{S2R}Links_index", f"{S2R}Links_sharedEnergy",
       f"{TS}_EV1", f"{TS}_EV2", f"{TS}_EV3", f"{TS}_raw_energy", f"{TS}_raw_em_energy",
